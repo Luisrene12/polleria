@@ -48,22 +48,8 @@ const createClient = () => {
     const c = new Client({
         authStrategy: new LocalAuth({ dataPath: SESSION_PATH }),
         puppeteer: {
-            headless: 'new',
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--no-zygote',
-                '--disable-extensions',
-                '--disable-notifications',
-                '--disable-remote-fonts',
-                '--disable-images', // Ahorra mucha RAM y ancho de banda
-                '--mute-audio',
-                '--no-first-run',
-                '--no-default-browser-check'
-            ],
-            executablePath: process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
         },
         webVersionCache: {
             type: 'remote',
