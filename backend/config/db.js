@@ -60,7 +60,8 @@ const poolPromise = new sql.ConnectionPool(config)
     .catch(err => {
         console.error('❌ Error al conectar a BD:', err.message);
         console.error('   Revisa los datos de conexión y que SQL Server esté accesible.');
-        // No detenemos el proceso, pero la aplicación no podrá usar la BD
+
+        return null;
     });
 
 module.exports = { sql, poolPromise };
