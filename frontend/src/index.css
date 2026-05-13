@@ -1,0 +1,75 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+
+:root {
+  --primary: #6366f1;
+  --secondary: #0f172a;
+  --success: #10b981;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #f1f5f9;
+  color: #0f172a;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Outfit', sans-serif;
+}
+
+.premium-glass {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 10px 30px -10px rgba(0,0,0,0.04);
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, #0f172a 0%, #6366f1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Scrollbar moderno */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* =========================================
+   REGLAS DE IMPRESIÓN (RECIBOS/TICKETS)
+========================================= */
+@media print {
+  /* Ocultar TODO lo que tenga la clase 'no-print' o no pertenezca al ticket */
+  body * {
+    visibility: hidden;
+  }
+  
+  /* Mostrar solo el contenedor del ticket y sus hijos */
+  #ticket-impresion, #ticket-impresion * {
+    visibility: visible;
+  }
+
+  /* Posicionar el ticket arriba a la izquierda para la impresora */
+  #ticket-impresion {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important; /* Adaptarse al ancho del papel (80mm o 58mm) */
+    margin: 0;
+    padding: 0;
+    box-shadow: none !important; /* Quitar sombras al imprimir */
+  }
+}
