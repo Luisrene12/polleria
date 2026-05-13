@@ -277,3 +277,35 @@ exports.getFullBackup = async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 };
+
+// 5. Guardar reporte personalizado
+exports.guardarReporte = async (req, res) => {
+    const { nombre, descripcion, datos } = req.body;
+    if (!nombre) {
+        return res.status(400).json({ message: 'El campo nombre es obligatorio.' });
+    }
+    try {
+        const pool = await poolPromise;
+        await pool.request()
+            .input('nombre', sql.NVarChar(100), nombre)
+            .input('descripcion', sql.Text, descripcion || null)
+            .input('datos', sql.NVarChar(sql.MAX), JSON.stringify(datos) || null)
+            .query(`INSERT INTO Reporte (nombre, descripcion, datos) VALUES (@nombre, @descripcion, @datos)`);
+        res.status(201).json({ message: 'Reporte guardado exitosamente.' });
+    } catch (err) {
+        console.error('Error guardando reporte:', err);
+        res.status(500).json({ message: err.message });
+    }
+};
+
+// 6. Obtener todos los reportes guardados
+exports.obtenerReportes = async (req, res) => {
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request().query('SELECT * FROM Reporte');
+        res.json(result.recordset);
+    } catch (err) {
+        console.error('Error obteniendo reportes:', err);
+        res.status(500).json({ message: err.message });
+    }
+};

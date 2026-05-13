@@ -63,3 +63,18 @@ GO
 UPDATE Usuarios SET pin_hash = '$2a$10$JVOpnUUL.n6HV2/STf8ov1wRanp3aqxkb5K8SvbYkf' WHERE pin_hash IS NULL;
 UPDATE Usuarios SET rol = 'admin' WHERE rol IS NULL;
 GO
+
+-- 4. Crear tabla Reporte
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Reporte' AND xtype='U')
+BEGIN
+    CREATE TABLE Reporte (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        nombre VARCHAR(100) NOT NULL,
+        descripcion TEXT NULL,
+        datos NVARCHAR(MAX) NULL,
+        creado_en DATETIME DEFAULT GETDATE(),
+        actualizado_en DATETIME DEFAULT GETDATE()
+    );
+    PRINT 'Tabla Reporte creada exitosamente.';
+END
+GO

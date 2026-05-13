@@ -8,5 +8,7 @@ router.get('/ventas-por-producto', verificarToken, reporteController.ventasPorPr
 router.get('/ventas-generales', verificarToken, reporteController.ventasGenerales);
 router.get('/dashboard', verificarToken, reporteController.getDashboardStats);
 router.get('/backup', verificarToken, reporteController.getFullBackup);
+router.post('/guardar', verificarToken, reporteController.guardarReporte);
+router.get('/reportes', verificarToken, reporteController.obtenerReportes);
 
 module.exports = router;
