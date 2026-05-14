@@ -20,8 +20,8 @@ const cleanLockFiles = () => {
         lockFiles.forEach(f => {
             const fp = path.join(lockDir, f);
             if (fs.existsSync(fp)) {
-                try { 
-                    fs.unlinkSync(fp); 
+                try {
+                    fs.unlinkSync(fp);
                     console.log(`🧹 [WHATSAPP] Archivo de bloqueo eliminado: ${f}`);
                 } catch (e) {
                     console.log(`⚠️ [WHATSAPP] No se pudo borrar ${f}: ${e.message}`);
@@ -53,7 +53,7 @@ const createClient = () => {
         },
         webVersionCache: {
             type: 'remote',
-            remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html' 
+            remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
         }
     });
 
@@ -109,7 +109,7 @@ const initWhatsApp = async (retries = 3) => {
         // Crear nueva instancia y guardarla
         console.log('📡 [WHATSAPP] Conectando con WhatsApp Web (esto tarda unos segundos)...');
         currentClient = createClient();
-        
+
         await currentClient.initialize();
         console.log('✅ [WHATSAPP] Inicialización enviada al navegador.');
 
@@ -129,8 +129,8 @@ const logoutWhatsApp = async () => {
     lastQr = null;
 
     if (currentClient) {
-        await currentClient.logout().catch(() => {});
-        await currentClient.destroy().catch(() => {});
+        await currentClient.logout().catch(() => { });
+        await currentClient.destroy().catch(() => { });
         currentClient = null;
     }
 
@@ -162,7 +162,7 @@ const restartWhatsApp = async () => {
 };
 
 // ─── Iniciar al arrancar el servidor ─────────────────────────────────────────
-setTimeout(() => initWhatsApp(), 500); // Reducido a 500ms
+//setTimeout(() => initWhatsApp(), 500); // Reducido a 500ms
 
 // ─── Proxy para acceder siempre al cliente actual ────────────────────────────
 const getClient = () => currentClient;
