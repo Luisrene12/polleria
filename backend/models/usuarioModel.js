@@ -1,95 +1,49 @@
-const { sql, poolPromise } = require('../config/db');
+const { pool } = require('../config/db');
 
 class UsuarioModel {
 
-    async getPool() {
-        const pool = await poolPromise;
-
-        if (!pool) {
-            throw new Error('No hay conexión a la base de datos');
-        }
-
-        return pool;
-    }
-
     async getAll() {
-        const pool = await this.getPool();
-
-        const result = await pool.request()
-            .query('SELECT id, nombre, username, rol, activo FROM Usuarios WHERE activo = 1');
-
-        return result.recordset;
+        const [rows] = await pool.query('SELECT id, nombre, username, rol, activo FROM Usuarios WHERE activo = 1');
+        return rows;
     }
 
     async getById(id) {
-        const pool = await this.getPool();
-
-        const result = await pool.request()
-            .input('id', sql.Int, id)
-            .query('SELECT id, nombre, username, rol, activo FROM Usuarios WHERE id = @id');
-
-        return result.recordset[0];
+        const [rows] = await pool.query('SELECT id, nombre, username, rol, activo FROM Usuarios WHERE id = ?', [id]);
+        return rows[0];
     }
 
     async findByUsername(username) {
-        const pool = await this.getPool();
-
-        const result = await pool.request()
-            .input('username', sql.VarChar, username)
-            .query('SELECT * FROM Usuarios WHERE username = @username AND activo = 1');
-
-        return result.recordset[0];
+        const [rows] = await pool.query('SELECT * FROM Usuarios WHERE username = ? AND activo = 1', [username]);
+        return rows[0];
     }
 
     async create(usuario) {
-        const pool = await this.getPool();
-
-        const result = await pool.request()
-            .input('nombre', sql.VarChar, usuario.nombre)
-            .input('username', sql.VarChar, usuario.username)
-            .input('pin_hash', sql.VarChar, usuario.pin_hash)
-            .input('rol', sql.VarChar, usuario.rol || 'seller')
-            .query(`
-                INSERT INTO Usuarios (nombre, username, pin_hash, rol) 
-                VALUES (@nombre, @username, @pin_hash, @rol);
-
-                SELECT SCOPE_IDENTITY() AS id
-            `);
-
-        return result.recordset[0].id;
+        const { nombre, username, pin_hash, rol } = usuario;
+        const [result] = await pool.query(
+            'INSERT INTO Usuarios (nombre, username, pin_hash, rol) VALUES (?, ?, ?, ?)',
+            [nombre, username, pin_hash, rol || 'seller']
+        );
+        return result.insertId;
     }
 
     async update(id, usuario) {
-        const pool = await this.getPool();
+        const { nombre, username, rol, pin_hash } = usuario;
+        let query = 'UPDATE Usuarios SET nombre = ?, username = ?, rol = ?';
+        const params = [nombre, username, rol];
 
-        let query = `
-            UPDATE Usuarios 
-            SET nombre = @nombre, username = @username, rol = @rol
-        `;
-
-        const request = pool.request()
-            .input('id', sql.Int, id)
-            .input('nombre', sql.VarChar, usuario.nombre)
-            .input('username', sql.VarChar, usuario.username)
-            .input('rol', sql.VarChar, usuario.rol);
-
-        if (usuario.pin_hash) {
-            query += `, pin_hash = @pin_hash`;
-
-            request.input('pin_hash', sql.VarChar, usuario.pin_hash);
+        if (pin_hash) {
+            query += ', pin_hash = ?';
+            params.push(pin_hash);
         }
 
-        query += ` WHERE id = @id`;
+        query += ' WHERE id = ?';
+        params.push(id);
 
-        await request.query(query);
+        await pool.query(query, params);
     }
 
     async delete(id) {
-        const pool = await this.getPool();
-
-        await pool.request()
-            .input('id', sql.Int, id)
-            .query('UPDATE Usuarios SET activo = 0 WHERE id = @id');
+        await pool.query('UPDATE Usuarios SET activo = 0 WHERE id = ?', [id]);
     }
 }
 

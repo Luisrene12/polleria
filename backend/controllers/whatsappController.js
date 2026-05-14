@@ -1,10 +1,7 @@
 const { getClient, getIsReady, sendMessageToOwner, sendFileToOwner, getLastQr, logoutWhatsApp, initWhatsApp } = require('../services/whatsappService');
-const { sql, poolPromise } = require('../config/db');
+const { pool } = require('../config/db');
 const PDFDocument = require('pdfkit-table');
 const { Buffer } = require('buffer');
-
-
-
 
 /**
  * Endpoint para enviar una notificación personalizada
@@ -57,7 +54,6 @@ exports.logout = async (req, res) => {
     }
 };
 
-
 /**
  * Endpoint para reiniciar completamente el cliente de WhatsApp
  */
@@ -76,18 +72,17 @@ exports.reset = async (req, res) => {
  */
 exports.sendDailyReport = async (req, res) => {
     try {
-        const pool = await poolPromise;
-        const result = await pool.request().query(`
+        const [rows] = await pool.query(`
             SELECT 
-                ISNULL(SUM(total), 0) AS total_hoy,
+                IFNULL(SUM(total), 0) AS total_hoy,
                 COUNT(id) as ventas_totales,
-                ISNULL(SUM(CASE WHEN metodo_pago = 'efectivo' THEN total ELSE monto_efectivo END), 0) AS total_efectivo,
-                ISNULL(SUM(CASE WHEN metodo_pago IN ('qr', 'tarjeta') THEN total ELSE monto_tarjeta END), 0) AS total_qr
+                IFNULL(SUM(CASE WHEN metodo_pago = 'efectivo' THEN total ELSE monto_efectivo END), 0) AS total_efectivo,
+                IFNULL(SUM(CASE WHEN metodo_pago IN ('qr', 'tarjeta') THEN total ELSE monto_tarjeta END), 0) AS total_qr
             FROM ventas 
-            WHERE CAST(fecha AS DATE) = CAST(GETDATE() AS DATE)
+            WHERE DATE(fecha) = CURDATE()
         `);
 
-        const stats = result.recordset[0];
+        const stats = rows[0];
         
         // Configuración de hora Boliviana
         const options = { timeZone: 'America/La_Paz' };
@@ -116,12 +111,15 @@ Pollería "Delicias"`;
  */
 exports.sendBackup = async (req, res) => {
     try {
-        const pool = await poolPromise;
+        const [ventas] = await pool.query('SELECT * FROM ventas');
+        const [detalles] = await pool.query('SELECT * FROM ventas_detalle');
+        const [productos] = await pool.query('SELECT * FROM productos');
+
         const result = {
             fecha: new Date(),
-            ventas: (await pool.request().query('SELECT * FROM ventas')).recordset,
-            detalles: (await pool.request().query('SELECT * FROM ventas_detalle')).recordset,
-            productos: (await pool.request().query('SELECT * FROM productos')).recordset
+            ventas,
+            detalles,
+            productos
         };
 
         const jsonString = JSON.stringify(result, null, 2);
@@ -140,25 +138,23 @@ exports.sendBackup = async (req, res) => {
  */
 exports.sendPDFReport = async (req, res) => {
     try {
-        const pool = await poolPromise;
-        
         // 1. Obtener totales
-        const statsResult = await pool.request().query(`
+        const [statsRows] = await pool.query(`
             SELECT 
-                ISNULL(SUM(total), 0) AS total_hoy,
-                ISNULL(SUM(CASE WHEN metodo_pago = 'efectivo' THEN total ELSE monto_efectivo END), 0) AS total_efectivo,
-                ISNULL(SUM(CASE WHEN metodo_pago IN ('qr', 'tarjeta') THEN total ELSE monto_tarjeta END), 0) AS total_qr
+                IFNULL(SUM(total), 0) AS total_hoy,
+                IFNULL(SUM(CASE WHEN metodo_pago = 'efectivo' THEN total ELSE monto_efectivo END), 0) AS total_efectivo,
+                IFNULL(SUM(CASE WHEN metodo_pago IN ('qr', 'tarjeta') THEN total ELSE monto_tarjeta END), 0) AS total_qr
             FROM ventas 
-            WHERE CAST(fecha AS DATE) = CAST(GETDATE() AS DATE)
+            WHERE DATE(fecha) = CURDATE()
         `);
-        const stats = statsResult.recordset[0];
+        const stats = statsRows[0];
 
         // 2. Obtener listado de ventas
-        const ventasResult = await pool.request().query(`
-            SELECT v.id, v.cliente, v.total, v.metodo_pago, v.monto_efectivo, v.monto_tarjeta, FORMAT(v.fecha, 'HH:mm') as hora, u.nombre as vendedor
+        const [ventasRows] = await pool.query(`
+            SELECT v.id, v.cliente, v.total, v.metodo_pago, v.monto_efectivo, v.monto_tarjeta, DATE_FORMAT(v.fecha, '%H:%i') as hora, u.nombre as vendedor
             FROM ventas v
             JOIN usuarios u ON v.usuario_id = u.id
-            WHERE CAST(v.fecha AS DATE) = CAST(GETDATE() AS DATE)
+            WHERE DATE(v.fecha) = CURDATE()
             ORDER BY v.fecha DESC
         `);
 
@@ -197,7 +193,7 @@ exports.sendPDFReport = async (req, res) => {
         const table = {
             title: "DETALLE DE VENTAS",
             headers: ["Nota", "Hora", "Cliente", "Método", "Vendedor", "Total"],
-            rows: ventasResult.recordset.map(v => [
+            rows: ventasRows.map(v => [
                 v.id.toString(),
                 v.hora,
                 v.cliente || 'S/N',
@@ -206,7 +202,6 @@ exports.sendPDFReport = async (req, res) => {
                 `Bs. ${Number(v.total).toFixed(2)}`
             ])
         };
-
 
         await doc.table(table, { 
             prepareHeader: () => doc.font("Helvetica-Bold").fontSize(10),
@@ -217,6 +212,6 @@ exports.sendPDFReport = async (req, res) => {
 
     } catch (error) {
         console.error('Error al generar PDF:', error);
-        res.status(500).json({ success: false, message: error.message });
+        if (!res.headersSent) res.status(500).json({ success: false, message: error.message });
     }
 };

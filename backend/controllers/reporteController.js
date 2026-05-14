@@ -1,52 +1,42 @@
-const { sql, poolPromise } = require('../config/db');
+const { pool } = require('../config/db');
 
 exports.ventasPorCajero = async (req, res) => {
     const { fechaInicio, fechaFin } = req.query;
     try {
-        const pool = await poolPromise;
-        
-        // 1. Resumen por cajero con desglose de métodos de pago y conteo de personas
-        const summaryResult = await pool.request()
-            .input('fechaInicio', sql.Date, fechaInicio)
-            .input('fechaFin', sql.Date, fechaFin)
-            .query(`
-                SELECT 
-                    u.id AS cajero_id, 
-                    u.nombre AS cajero, 
-                    COUNT(DISTINCT v.id) AS total_ventas, 
-                    SUM(v.total) AS monto_total,
-                    -- Montos acumulados
-                    SUM(CASE WHEN v.metodo_pago = 'efectivo' THEN v.total ELSE v.monto_efectivo END) AS total_efectivo,
-                    SUM(CASE WHEN v.metodo_pago = 'qr' THEN v.total ELSE v.monto_tarjeta END) AS total_qr,
-                    -- Conteo de personas (transacciones)
-                    COUNT(CASE WHEN v.metodo_pago = 'efectivo' THEN 1 END) AS cant_efectivo,
-                    COUNT(CASE WHEN v.metodo_pago = 'qr' THEN 1 END) AS cant_qr,
-                    COUNT(CASE WHEN v.metodo_pago = 'mixto' THEN 1 END) AS cant_mixto
-                FROM ventas v
-                INNER JOIN usuarios u ON v.usuario_id = u.id
-                WHERE CAST(v.fecha AS DATE) BETWEEN @fechaInicio AND @fechaFin
-                GROUP BY u.id, u.nombre
-            `);
+        // 1. Resumen por cajero
+        const [summaryRows] = await pool.query(`
+            SELECT 
+                u.id AS cajero_id, 
+                u.nombre AS cajero, 
+                COUNT(DISTINCT v.id) AS total_ventas, 
+                SUM(v.total) AS monto_total,
+                SUM(CASE WHEN v.metodo_pago = 'efectivo' THEN v.total ELSE v.monto_efectivo END) AS total_efectivo,
+                SUM(CASE WHEN v.metodo_pago = 'qr' THEN v.total ELSE v.monto_tarjeta END) AS total_qr,
+                COUNT(CASE WHEN v.metodo_pago = 'efectivo' THEN 1 END) AS cant_efectivo,
+                COUNT(CASE WHEN v.metodo_pago = 'qr' THEN 1 END) AS cant_qr,
+                COUNT(CASE WHEN v.metodo_pago = 'mixto' THEN 1 END) AS cant_mixto
+            FROM ventas v
+            INNER JOIN usuarios u ON v.usuario_id = u.id
+            WHERE DATE(v.fecha) BETWEEN ? AND ?
+            GROUP BY u.id, u.nombre
+        `, [fechaInicio, fechaFin]);
 
-        // 2. Obtener los detalles de qué productos vendió cada cajero
-        const detailsResult = await pool.request()
-            .input('fechaInicio', sql.Date, fechaInicio)
-            .input('fechaFin', sql.Date, fechaFin)
-            .query(`
-                SELECT u.id AS cajero_id, p.nombre AS producto, SUM(vd.cantidad) AS cantidad_vendida, SUM(vd.subtotal) AS total_producto
-                FROM ventas_detalle vd
-                INNER JOIN ventas v ON vd.venta_id = v.id
-                INNER JOIN productos p ON vd.producto_id = p.id
-                INNER JOIN usuarios u ON v.usuario_id = u.id
-                WHERE CAST(v.fecha AS DATE) BETWEEN @fechaInicio AND @fechaFin
-                GROUP BY u.id, p.nombre
-            `);
+        // 2. Detalles de productos
+        const [detailsRows] = await pool.query(`
+            SELECT u.id AS cajero_id, p.nombre AS producto, SUM(vd.cantidad) AS cantidad_vendida, SUM(vd.subtotal) AS total_producto
+            FROM ventas_detalle vd
+            INNER JOIN ventas v ON vd.venta_id = v.id
+            INNER JOIN productos p ON vd.producto_id = p.id
+            INNER JOIN usuarios u ON v.usuario_id = u.id
+            WHERE DATE(v.fecha) BETWEEN ? AND ?
+            GROUP BY u.id, p.nombre
+        `, [fechaInicio, fechaFin]);
             
-        // 3. Mapear los detalles dentro de cada cajero
-        const report = summaryResult.recordset.map(cajero => {
+        // 3. Mapear report
+        const report = summaryRows.map(cajero => {
             return {
                 ...cajero,
-                detalles: detailsResult.recordset.filter(d => d.cajero_id === cajero.cajero_id)
+                detalles: detailsRows.filter(d => d.cajero_id === cajero.cajero_id)
             };
         });
 
@@ -59,19 +49,15 @@ exports.ventasPorCajero = async (req, res) => {
 exports.ventasPorProducto = async (req, res) => {
     const { fechaInicio, fechaFin } = req.query;
     try {
-        const pool = await poolPromise;
-        const result = await pool.request()
-            .input('fechaInicio', sql.Date, fechaInicio)
-            .input('fechaFin', sql.Date, fechaFin)
-            .query(`
-                SELECT p.nombre AS producto, SUM(vd.cantidad) AS cantidad_vendida, SUM(vd.subtotal) AS total
-                FROM ventas_detalle vd
-                INNER JOIN ventas v ON vd.venta_id = v.id
-                INNER JOIN productos p ON vd.producto_id = p.id
-                WHERE CAST(v.fecha AS DATE) BETWEEN @fechaInicio AND @fechaFin
-                GROUP BY p.nombre
-            `);
-        res.json(result.recordset);
+        const [rows] = await pool.query(`
+            SELECT p.nombre AS producto, SUM(vd.cantidad) AS cantidad_vendida, SUM(vd.subtotal) AS total
+            FROM ventas_detalle vd
+            INNER JOIN ventas v ON vd.venta_id = v.id
+            INNER JOIN productos p ON vd.producto_id = p.id
+            WHERE DATE(v.fecha) BETWEEN ? AND ?
+            GROUP BY p.nombre
+        `, [fechaInicio, fechaFin]);
+        res.json(rows);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -82,67 +68,49 @@ exports.ventasGenerales = async (req, res) => {
     const { id: usuarioId, rol } = req.usuario;
 
     try {
-        const pool = await poolPromise;
-        
-        let filterClause = "WHERE CAST(v.fecha AS DATE) BETWEEN @fechaInicio AND @fechaFin";
-        // Si no es admin, solo puede ver sus propias ventas
-        if (rol !== 'admin') {
-            filterClause += " AND v.usuario_id = @usuarioId";
-        }
-
-        // 1. Obtener listado de ventas
-        const requestVentas = pool.request()
-            .input('fechaInicio', sql.Date, fechaInicio)
-            .input('fechaFin', sql.Date, fechaFin);
+        let filterClause = "WHERE DATE(v.fecha) BETWEEN ? AND ?";
+        const paramsVentas = [fechaInicio, fechaFin];
         
         if (rol !== 'admin') {
-            requestVentas.input('usuarioId', sql.Int, usuarioId);
+            filterClause += " AND v.usuario_id = ?";
+            paramsVentas.push(usuarioId);
         }
 
-        const ventasResult = await requestVentas.query(`
+        const [ventasRows] = await pool.query(`
             SELECT 
                 v.id, v.fecha, v.total, v.monto_efectivo, v.monto_tarjeta,
                 u.nombre AS cajero, v.cliente, v.metodo_pago,
                 (
-                    SELECT STUFF((
-                        SELECT ', ' + CAST(vd.cantidad AS VARCHAR) + 'x ' + p.nombre 
-                        FROM ventas_detalle vd
-                        INNER JOIN productos p ON vd.producto_id = p.id
-                        WHERE vd.venta_id = v.id
-                        FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '')
+                    SELECT GROUP_CONCAT(CONCAT(vd.cantidad, 'x ', p.nombre) SEPARATOR ', ')
+                    FROM ventas_detalle vd
+                    INNER JOIN productos p ON vd.producto_id = p.id
+                    WHERE vd.venta_id = v.id
                 ) AS productos
             FROM ventas v
             INNER JOIN usuarios u ON v.usuario_id = u.id
             ${filterClause}
             ORDER BY v.fecha DESC
-        `);
+        `, paramsVentas);
 
-        // 2. Obtener resumen detallado de totales
-        const requestTotals = pool.request()
-            .input('fechaInicio', sql.Date, fechaInicio)
-            .input('fechaFin', sql.Date, fechaFin);
-        
+        let totalFilter = "WHERE DATE(fecha) BETWEEN ? AND ?";
+        const paramsTotals = [fechaInicio, fechaFin];
         if (rol !== 'admin') {
-            requestTotals.input('usuarioId', sql.Int, usuarioId);
+            totalFilter += " AND usuario_id = ?";
+            paramsTotals.push(usuarioId);
         }
 
-        let totalFilter = "WHERE CAST(fecha AS DATE) BETWEEN @fechaInicio AND @fechaFin";
-        if (rol !== 'admin') {
-            totalFilter += " AND usuario_id = @usuarioId";
-        }
-
-        const totalsResult = await requestTotals.query(`
+        const [totalsRows] = await pool.query(`
             SELECT 
-                ISNULL(SUM(CASE WHEN metodo_pago = 'efectivo' THEN total ELSE monto_efectivo END), 0) AS total_efectivo,
-                ISNULL(SUM(CASE WHEN metodo_pago IN ('qr', 'tarjeta') THEN total ELSE monto_tarjeta END), 0) AS total_qr,
-                ISNULL(SUM(total), 0) AS total_general
+                IFNULL(SUM(CASE WHEN metodo_pago = 'efectivo' THEN total ELSE monto_efectivo END), 0) AS total_efectivo,
+                IFNULL(SUM(CASE WHEN metodo_pago IN ('qr', 'tarjeta') THEN total ELSE monto_tarjeta END), 0) AS total_qr,
+                IFNULL(SUM(total), 0) AS total_general
             FROM ventas
             ${totalFilter}
-        `);
+        `, paramsTotals);
 
         res.json({
-            ventas: ventasResult.recordset,
-            resumen: totalsResult.recordset[0]
+            ventas: ventasRows,
+            resumen: totalsRows[0]
         });
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -152,74 +120,68 @@ exports.ventasGenerales = async (req, res) => {
 exports.getDashboardStats = async (req, res) => {
     const { fechaInicio, fechaFin, usuarioId } = req.query;
     try {
-        const pool = await poolPromise;
-        
-        let dateFilter = "CAST(fecha AS DATE) = CAST(GETDATE() AS DATE)";
-        let dateFilterV = "CAST(v.fecha AS DATE) = CAST(GETDATE() AS DATE)";
-        
-        const request = pool.request();
+        let dateFilter = "DATE(fecha) = CURDATE()";
+        let dateFilterV = "DATE(v.fecha) = CURDATE()";
+        const params = [];
 
-        // Si es cajero, forzar su propio ID
         if (req.usuario.rol !== 'admin') {
-            dateFilter += " AND usuario_id = @usuario_id";
-            dateFilterV += " AND v.usuario_id = @usuario_id";
-            request.input('usuario_id', sql.Int, req.usuario.id);
+            dateFilter += " AND usuario_id = ?";
+            dateFilterV += " AND v.usuario_id = ?";
+            params.push(req.usuario.id);
         } 
-        // Si es admin y envió un usuarioId específico
         else if (usuarioId && usuarioId !== 'todos') {
-            dateFilter += " AND usuario_id = @filterUsuarioId";
-            dateFilterV += " AND v.usuario_id = @filterUsuarioId";
-            request.input('filterUsuarioId', sql.Int, usuarioId);
+            dateFilter += " AND usuario_id = ?";
+            dateFilterV += " AND v.usuario_id = ?";
+            params.push(usuarioId);
         }
         
         if (fechaInicio && fechaFin) {
-            dateFilter = "CAST(fecha AS DATE) BETWEEN @fechaInicio AND @fechaFin" + 
-                (req.usuario.rol !== 'admin' ? " AND usuario_id = @usuario_id" : 
-                (usuarioId && usuarioId !== 'todos' ? " AND usuario_id = @filterUsuarioId" : ""));
+            dateFilter = "DATE(fecha) BETWEEN ? AND ?" + 
+                (req.usuario.rol !== 'admin' ? " AND usuario_id = ?" : 
+                (usuarioId && usuarioId !== 'todos' ? " AND usuario_id = ?" : ""));
             
-            dateFilterV = "CAST(v.fecha AS DATE) BETWEEN @fechaInicio AND @fechaFin" + 
-                (req.usuario.rol !== 'admin' ? " AND v.usuario_id = @usuario_id" : 
-                (usuarioId && usuarioId !== 'todos' ? " AND v.usuario_id = @filterUsuarioId" : ""));
+            dateFilterV = "DATE(v.fecha) BETWEEN ? AND ?" + 
+                (req.usuario.rol !== 'admin' ? " AND v.usuario_id = ?" : 
+                (usuarioId && usuarioId !== 'todos' ? " AND v.usuario_id = ?" : ""));
                 
-            request.input('fechaInicio', sql.Date, fechaInicio);
-            request.input('fechaFin', sql.Date, fechaFin);
+            params.unshift(fechaInicio, fechaFin);
         }
 
-
-        // 1. Ventas (Monto Total, Efectivo, QR y Conteo)
-        const summaryResult = await request.query(`
+        // 1. Ventas
+        const [summaryRows] = await pool.query(`
             SELECT 
-                ISNULL(SUM(total), 0) AS total_hoy, 
+                IFNULL(SUM(total), 0) AS total_hoy, 
                 COUNT(id) as ventas_totales,
-                ISNULL(SUM(CASE WHEN metodo_pago = 'efectivo' THEN total ELSE monto_efectivo END), 0) AS total_efectivo,
-                ISNULL(SUM(CASE WHEN metodo_pago IN ('qr', 'tarjeta') THEN total ELSE monto_tarjeta END), 0) AS total_qr
+                IFNULL(SUM(CASE WHEN metodo_pago = 'efectivo' THEN total ELSE monto_efectivo END), 0) AS total_efectivo,
+                IFNULL(SUM(CASE WHEN metodo_pago IN ('qr', 'tarjeta') THEN total ELSE monto_tarjeta END), 0) AS total_qr
             FROM ventas 
             WHERE ${dateFilter}
-        `);
+        `, params);
 
-        // 2. Top 10 Productos Más Vendidos
-        const topProductsResult = await request.query(`
-            SELECT TOP 10 p.nombre, SUM(vd.cantidad) AS cantidad
+        // 2. Top 10 Productos
+        const [topProductsRows] = await pool.query(`
+            SELECT p.nombre, SUM(vd.cantidad) AS cantidad
             FROM ventas_detalle vd
             INNER JOIN productos p ON vd.producto_id = p.id
             INNER JOIN ventas v ON vd.venta_id = v.id
             WHERE ${dateFilterV}
             GROUP BY p.nombre
             ORDER BY cantidad DESC
-        `);
+            LIMIT 10
+        `, params);
 
         // 3. Ventas por Cajero
-        const topCajerosResult = await request.query(`
+        const [topCajerosRows] = await pool.query(`
             SELECT u.nombre, SUM(v.total) AS total_ventas
             FROM ventas v
             INNER JOIN usuarios u ON v.usuario_id = u.id
             WHERE ${dateFilterV}
             GROUP BY u.nombre
             ORDER BY total_ventas DESC
-        `);
+        `, params);
 
-        // 4. Historial completo de Ventas
-        const historialResult = await request.query(`
+        // 4. Historial
+        const [historialRows] = await pool.query(`
             SELECT 
                 v.id as nota, 
                 v.cliente, 
@@ -230,28 +192,25 @@ exports.getDashboardStats = async (req, res) => {
                 v.monto_tarjeta,
                 u.nombre AS vendedor,
                 (
-                    SELECT STUFF((
-                        SELECT ', ' + CAST(vd.cantidad AS VARCHAR) + 'x ' + p.nombre 
-                        FROM ventas_detalle vd
-                        INNER JOIN productos p ON vd.producto_id = p.id
-                        WHERE vd.venta_id = v.id
-                        FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '')
+                    SELECT GROUP_CONCAT(CONCAT(vd.cantidad, 'x ', p.nombre) SEPARATOR ', ')
+                    FROM ventas_detalle vd
+                    INNER JOIN productos p ON vd.producto_id = p.id
+                    WHERE vd.venta_id = v.id
                 ) AS productos
             FROM ventas v
             INNER JOIN usuarios u ON v.usuario_id = u.id
             WHERE ${dateFilterV}
             ORDER BY v.fecha DESC
-        `);
-
+        `, params);
 
         res.json({
-            hoy: summaryResult.recordset[0].total_hoy,
-            totalEfectivo: summaryResult.recordset[0].total_efectivo,
-            totalQR: summaryResult.recordset[0].total_qr,
-            ventasTotales: summaryResult.recordset[0].ventas_totales,
-            topProductos: topProductsResult.recordset,
-            topCajeros: topCajerosResult.recordset,
-            historial: historialResult.recordset
+            hoy: summaryRows[0].total_hoy,
+            totalEfectivo: summaryRows[0].total_efectivo,
+            totalQR: summaryRows[0].total_qr,
+            ventasTotales: summaryRows[0].ventas_totales,
+            topProductos: topProductsRows,
+            topCajeros: topCajerosRows,
+            historial: historialRows
         });
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -260,52 +219,42 @@ exports.getDashboardStats = async (req, res) => {
 
 exports.getFullBackup = async (req, res) => {
     try {
-        const pool = await poolPromise;
-        const resultVentas = await pool.request().query('SELECT * FROM ventas');
-        const resultDetalles = await pool.request().query('SELECT * FROM ventas_detalle');
-        const resultProductos = await pool.request().query('SELECT * FROM productos');
-        const resultCategorias = await pool.request().query('SELECT * FROM categorias');
+        const [ventas] = await pool.query('SELECT * FROM ventas');
+        const [detalles] = await pool.query('SELECT * FROM ventas_detalle');
+        const [productos] = await pool.query('SELECT * FROM productos');
+        const [categorias] = await pool.query('SELECT * FROM categorias');
 
         res.json({
             fecha_backup: new Date(),
-            ventas: resultVentas.recordset,
-            detalles: resultDetalles.recordset,
-            productos: resultProductos.recordset,
-            categorias: resultCategorias.recordset
+            ventas,
+            detalles,
+            productos,
+            categorias
         });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
 };
 
-// 5. Guardar reporte personalizado
 exports.guardarReporte = async (req, res) => {
     const { nombre, descripcion, datos } = req.body;
-    if (!nombre) {
-        return res.status(400).json({ message: 'El campo nombre es obligatorio.' });
-    }
+    if (!nombre) return res.status(400).json({ message: 'El campo nombre es obligatorio.' });
     try {
-        const pool = await poolPromise;
-        await pool.request()
-            .input('nombre', sql.NVarChar(100), nombre)
-            .input('descripcion', sql.Text, descripcion || null)
-            .input('datos', sql.NVarChar(sql.MAX), JSON.stringify(datos) || null)
-            .query(`INSERT INTO Reporte (nombre, descripcion, datos) VALUES (@nombre, @descripcion, @datos)`);
+        await pool.query(
+            'INSERT INTO Reporte (nombre, descripcion, datos) VALUES (?, ?, ?)',
+            [nombre, descripcion || null, JSON.stringify(datos) || null]
+        );
         res.status(201).json({ message: 'Reporte guardado exitosamente.' });
     } catch (err) {
-        console.error('Error guardando reporte:', err);
         res.status(500).json({ message: err.message });
     }
 };
 
-// 6. Obtener todos los reportes guardados
 exports.obtenerReportes = async (req, res) => {
     try {
-        const pool = await poolPromise;
-        const result = await pool.request().query('SELECT * FROM Reporte');
-        res.json(result.recordset);
+        const [rows] = await pool.query('SELECT * FROM Reporte');
+        res.json(rows);
     } catch (err) {
-        console.error('Error obteniendo reportes:', err);
         res.status(500).json({ message: err.message });
     }
 };

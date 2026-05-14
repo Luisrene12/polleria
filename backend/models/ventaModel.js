@@ -1,97 +1,86 @@
-const { sql, poolPromise } = require('../config/db');
+const { pool } = require('../config/db');
 
 class VentaModel {
     async create(venta) {
-        const pool = await poolPromise;
-        const transaction = pool.transaction();
-        await transaction.begin();
+        const connection = await pool.getConnection();
+        await connection.beginTransaction();
         
         try {
             // 1. Insertar cabecera de venta
-            const result = await transaction.request()
-                .input('usuario_id', sql.Int, venta.usuario_id)
-                .input('total', sql.Decimal, venta.total)
-                .input('cliente', sql.VarChar, venta.cliente || 'Cliente Mostrador')
-                .input('metodo_pago', sql.VarChar, venta.metodo_pago || 'efectivo')
-                .input('monto_efectivo', sql.Decimal, venta.monto_efectivo || 0)
-                .input('monto_tarjeta', sql.Decimal, venta.monto_tarjeta || 0)
-                .query(`INSERT INTO ventas (usuario_id, total, cliente, metodo_pago, monto_efectivo, monto_tarjeta) 
-                        VALUES (@usuario_id, @total, @cliente, @metodo_pago, @monto_efectivo, @monto_tarjeta);
-                        SELECT SCOPE_IDENTITY() AS venta_id`);
-            const ventaId = result.recordset[0].venta_id;
+            const [result] = await connection.query(
+                `INSERT INTO ventas (usuario_id, total, cliente, metodo_pago, monto_efectivo, monto_tarjeta) 
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [venta.usuario_id, venta.total, venta.cliente || 'Cliente Mostrador', venta.metodo_pago || 'efectivo', venta.monto_efectivo || 0, venta.monto_tarjeta || 0]
+            );
+            const ventaId = result.insertId;
 
             // 2. Insertar detalles y ACTUALIZAR STOCK
             for (const item of venta.items) {
                 // Insertar detalle
-                await transaction.request()
-                    .input('venta_id', sql.Int, ventaId)
-                    .input('producto_id', sql.Int, item.producto_id)
-                    .input('cantidad', sql.Int, item.cantidad)
-                    .input('precio_unitario', sql.Decimal, item.precio_unitario)
-                    .input('subtotal', sql.Decimal, item.subtotal)
-                    .query(`INSERT INTO ventas_detalle (venta_id, producto_id, cantidad, precio_unitario, subtotal) 
-                            VALUES (@venta_id, @producto_id, @cantidad, @precio_unitario, @subtotal)`);
+                await connection.query(
+                    `INSERT INTO ventas_detalle (venta_id, producto_id, cantidad, precio_unitario, subtotal) 
+                     VALUES (?, ?, ?, ?, ?)`,
+                    [ventaId, item.producto_id, item.cantidad, item.precio_unitario, item.subtotal]
+                );
                 
-                // Descontar Stock (Evita inconsistencias)
-                await transaction.request()
-                    .input('id', sql.Int, item.producto_id)
-                    .input('cant', sql.Int, item.cantidad)
-                    .query(`UPDATE productos SET stock = stock - @cant WHERE id = @id`);
+                // Descontar Stock
+                await connection.query(
+                    `UPDATE productos SET stock = stock - ? WHERE id = ?`,
+                    [item.cantidad, item.producto_id]
+                );
             }
 
-            await transaction.commit();
+            await connection.commit();
             return ventaId;
         } catch (error) {
-            await transaction.rollback();
+            await connection.rollback();
             console.error('❌ Error en transacción de venta:', error);
             throw error;
+        } finally {
+            connection.release();
         }
     }
 
     async delete(id) {
-        const pool = await poolPromise;
-        const transaction = pool.transaction();
-        await transaction.begin();
+        const connection = await pool.getConnection();
+        await connection.beginTransaction();
 
         try {
             // 1. Obtener detalles para devolver el stock
-            const itemsResult = await transaction.request()
-                .input('venta_id', sql.Int, id)
-                .query('SELECT producto_id, cantidad FROM ventas_detalle WHERE venta_id = @venta_id');
+            const [items] = await connection.query(
+                'SELECT producto_id, cantidad FROM ventas_detalle WHERE venta_id = ?',
+                [id]
+            );
             
-            for (const item of itemsResult.recordset) {
-                await transaction.request()
-                    .input('id', sql.Int, item.producto_id)
-                    .input('cant', sql.Int, item.cantidad)
-                    .query('UPDATE productos SET stock = stock + @cant WHERE id = @id');
+            for (const item of items) {
+                await connection.query(
+                    'UPDATE productos SET stock = stock + ? WHERE id = ?',
+                    [item.cantidad, item.producto_id]
+                );
             }
 
             // 2. Eliminar detalles
-            await transaction.request()
-                .input('venta_id', sql.Int, id)
-                .query('DELETE FROM ventas_detalle WHERE venta_id = @venta_id');
+            await connection.query('DELETE FROM ventas_detalle WHERE venta_id = ?', [id]);
 
             // 3. Eliminar cabecera
-            await transaction.request()
-                .input('id', sql.Int, id)
-                .query('DELETE FROM ventas WHERE id = @id');
+            await connection.query('DELETE FROM ventas WHERE id = ?', [id]);
 
-            await transaction.commit();
+            await connection.commit();
             return true;
         } catch (error) {
-            await transaction.rollback();
+            await connection.rollback();
             throw error;
+        } finally {
+            connection.release();
         }
     }
 
     async updateMetadata(id, data) {
-        const pool = await poolPromise;
         try {
-            await pool.request()
-                .input('id', sql.Int, id)
-                .input('cliente', sql.VarChar, data.cliente)
-                .input('metodo_pago', sql.VarChar, data.metodo_pago)
-                .query(`UPDATE ventas SET cliente = @cliente, metodo_pago = @metodo_pago WHERE id = @id`);
+            await pool.query(
+                'UPDATE ventas SET cliente = ?, metodo_pago = ? WHERE id = ?',
+                [data.cliente, data.metodo_pago, id]
+            );
             return true;
         } catch (error) {
             throw error;
@@ -99,4 +88,4 @@ class VentaModel {
     }
 }
 
-module.exports = new VentaModel();
+module.exports = new VentaModel();
