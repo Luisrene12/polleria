@@ -28,6 +28,11 @@ app.use('/api/reportes', reporteRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 
 
+
+app.get("/", (req, res) => {
+    res.send("Backend funcionando correctamente");
+});
+
 // Health check endpoint para verificar conexión Frontend-Backend
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: '¡Backend conectado correctamente!', timestamp: new Date() });
