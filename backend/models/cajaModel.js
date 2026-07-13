@@ -25,10 +25,10 @@ class CajaModel {
         return rows[0].total_ventas;
     }
 
-    static async cerrar(id, monto_final_calculado, monto_final_real, diferencia) {
+    static async cerrar(id, monto_final_calculado, monto_final_real) {
         await pool.query(
-            'UPDATE cierres_caja SET fecha_cierre = NOW(), monto_final_calculado = ?, monto_final_real = ?, diferencia = ?, estado = "cerrado" WHERE id = ?',
-            [monto_final_calculado, monto_final_real, diferencia, id]
+            'UPDATE cierres_caja SET fecha_cierre = NOW(), monto_final_calculado = ?, monto_final_real = ?, estado = "cerrado" WHERE id = ?',
+            [monto_final_calculado, monto_final_real, id]
         );
     }
 }

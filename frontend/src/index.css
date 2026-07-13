@@ -49,27 +49,77 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* =========================================
-   REGLAS DE IMPRESIÓN (RECIBOS/TICKETS)
+   REGLAS DE IMPRESIÓN (RECIBOS/TICKETS 80MM)
 ========================================= */
 @media print {
-  /* Ocultar TODO lo que tenga la clase 'no-print' o no pertenezca al ticket */
-  body * {
-    visibility: hidden;
+  /* Tamaño de la página sin márgenes para maximizar espacio */
+  @page {
+    size: 80mm auto;
+    margin: 0;
   }
   
-  /* Mostrar solo el contenedor del ticket y sus hijos */
-  #ticket-impresion, #ticket-impresion * {
-    visibility: visible;
+  /* Reset general para la página impresa */
+  html, body {
+    width: 80mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-family: 'Courier New', Courier, monospace !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  /* Ocultar elementos innecesarios */
+  nav, .no-print, header, footer, button, .Toaster {
+    display: none !important;
+    height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  
+  /* Permitir flujo normal quitando restricciones de scroll y pantalla completa */
+  #root, main, div {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    position: static !important;
+    transform: none !important;
+  }
+  
+  /* Asegurar que el contenedor del ticket se muestre correctamente */
+  #ticket-impresion {
+    display: block !important;
+    width: 80mm !important;
+    max-width: 80mm !important;
+    margin: 0 !important;
+    padding: 4mm !important;
+    box-sizing: border-box !important;
+    background: #ffffff !important;
+    color: #000000 !important;
   }
 
-  /* Posicionar el ticket arriba a la izquierda para la impresora */
-  #ticket-impresion {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100% !important; /* Adaptarse al ancho del papel (80mm o 58mm) */
-    margin: 0;
-    padding: 0;
-    box-shadow: none !important; /* Quitar sombras al imprimir */
+  /* Salto de página para separar el Ticket del Cliente y la Comanda de Cocina */
+  .page-break {
+    display: block !important;
+    page-break-before: always !important;
+    break-before: page !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    visibility: visible !important;
+  }
+  
+  /* Forzar visibilidad de fondos grises y negros en impresión */
+  .bg-black {
+    background-color: #000000 !important;
+    color: #ffffff !important;
+  }
+  
+  .bg-slate-200 {
+    background-color: #e2e8f0 !important;
+    color: #000000 !important;
   }
 }

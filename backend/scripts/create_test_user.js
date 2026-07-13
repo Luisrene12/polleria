@@ -1,5 +1,5 @@
 const bcrypt = require('bcryptjs');
-const { sql, poolPromise } = require('./backend/config/db');
+const { sql, poolPromise } = require('../config/db');
 
 async function sed() {
     const hashed = await bcrypt.hash('1234', 10);

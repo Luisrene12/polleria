@@ -1,4 +1,4 @@
-const { poolPromise, sql } = require('./backend/config/db');
+const { poolPromise, sql } = require('../config/db');
 
 async function migrateMixedPayments() {
     try {

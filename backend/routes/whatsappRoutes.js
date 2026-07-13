@@ -9,6 +9,7 @@ router.post('/reporte-diario', verificarToken, whatsappController.sendDailyRepor
 router.post('/backup', verificarToken, whatsappController.sendBackup);
 router.post('/logout', verificarToken, whatsappController.logout);
 router.post('/reset', verificarToken, whatsappController.reset);
+router.post('/full-reset', verificarToken, whatsappController.fullReset);
 router.post('/reporte-pdf', verificarToken, whatsappController.sendPDFReport);
 
 

@@ -5,8 +5,8 @@ const { verificarToken, esAdmin } = require('../middleware/authMiddleware');
 
 router.get('/', verificarToken, productoController.getAll);
 router.get('/:id', verificarToken, productoController.getById);
-router.post('/', verificarToken, esAdmin, productoController.create);
-router.put('/:id', verificarToken, esAdmin, productoController.update);
-router.delete('/:id', verificarToken, esAdmin, productoController.delete);
+router.post('/', verificarToken, productoController.create);
+router.put('/:id', verificarToken, productoController.update);
+router.delete('/:id', verificarToken, productoController.delete);
 
 module.exports = router;

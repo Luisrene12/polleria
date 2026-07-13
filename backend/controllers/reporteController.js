@@ -3,23 +3,24 @@ const { pool } = require('../config/db');
 exports.ventasPorCajero = async (req, res) => {
     const { fechaInicio, fechaFin } = req.query;
     try {
+        const params = [fechaInicio, `${fechaFin} 23:59:59`];
         // 1. Resumen por cajero
         const [summaryRows] = await pool.query(`
             SELECT 
                 u.id AS cajero_id, 
                 u.nombre AS cajero, 
-                COUNT(DISTINCT v.id) AS total_ventas, 
+                COUNT(v.id) AS total_ventas, 
                 SUM(v.total) AS monto_total,
                 SUM(CASE WHEN v.metodo_pago = 'efectivo' THEN v.total ELSE v.monto_efectivo END) AS total_efectivo,
-                SUM(CASE WHEN v.metodo_pago = 'qr' THEN v.total ELSE v.monto_tarjeta END) AS total_qr,
+                SUM(CASE WHEN v.metodo_pago IN ('qr', 'tarjeta') THEN v.total ELSE v.monto_tarjeta END) AS total_qr,
                 COUNT(CASE WHEN v.metodo_pago = 'efectivo' THEN 1 END) AS cant_efectivo,
-                COUNT(CASE WHEN v.metodo_pago = 'qr' THEN 1 END) AS cant_qr,
+                COUNT(CASE WHEN v.metodo_pago IN ('qr', 'tarjeta') THEN 1 END) AS cant_qr,
                 COUNT(CASE WHEN v.metodo_pago = 'mixto' THEN 1 END) AS cant_mixto
             FROM ventas v
             INNER JOIN usuarios u ON v.usuario_id = u.id
-            WHERE DATE(v.fecha) BETWEEN ? AND ?
+            WHERE v.fecha >= ? AND v.fecha <= ?
             GROUP BY u.id, u.nombre
-        `, [fechaInicio, fechaFin]);
+        `, params);
 
         // 2. Detalles de productos
         const [detailsRows] = await pool.query(`
@@ -28,9 +29,9 @@ exports.ventasPorCajero = async (req, res) => {
             INNER JOIN ventas v ON vd.venta_id = v.id
             INNER JOIN productos p ON vd.producto_id = p.id
             INNER JOIN usuarios u ON v.usuario_id = u.id
-            WHERE DATE(v.fecha) BETWEEN ? AND ?
+            WHERE v.fecha >= ? AND v.fecha <= ?
             GROUP BY u.id, p.nombre
-        `, [fechaInicio, fechaFin]);
+        `, params);
             
         // 3. Mapear report
         const report = summaryRows.map(cajero => {
@@ -54,9 +55,9 @@ exports.ventasPorProducto = async (req, res) => {
             FROM ventas_detalle vd
             INNER JOIN ventas v ON vd.venta_id = v.id
             INNER JOIN productos p ON vd.producto_id = p.id
-            WHERE DATE(v.fecha) BETWEEN ? AND ?
-            GROUP BY p.nombre
-        `, [fechaInicio, fechaFin]);
+            WHERE v.fecha >= ? AND v.fecha <= ?
+            GROUP BY p.id, p.nombre
+        `, [fechaInicio, `${fechaFin} 23:59:59`]);
         res.json(rows);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -68,8 +69,8 @@ exports.ventasGenerales = async (req, res) => {
     const { id: usuarioId, rol } = req.usuario;
 
     try {
-        let filterClause = "WHERE DATE(v.fecha) BETWEEN ? AND ?";
-        const paramsVentas = [fechaInicio, fechaFin];
+        let filterClause = "WHERE v.fecha >= ? AND v.fecha <= ?";
+        const paramsVentas = [fechaInicio, `${fechaFin} 23:59:59`];
         
         if (rol !== 'admin') {
             filterClause += " AND v.usuario_id = ?";
@@ -79,21 +80,37 @@ exports.ventasGenerales = async (req, res) => {
         const [ventasRows] = await pool.query(`
             SELECT 
                 v.id, v.fecha, v.total, v.monto_efectivo, v.monto_tarjeta,
-                u.nombre AS cajero, v.cliente, v.metodo_pago,
-                (
-                    SELECT GROUP_CONCAT(CONCAT(vd.cantidad, 'x ', p.nombre) SEPARATOR ', ')
-                    FROM ventas_detalle vd
-                    INNER JOIN productos p ON vd.producto_id = p.id
-                    WHERE vd.venta_id = v.id
-                ) AS productos
+                u.nombre AS cajero, v.cliente, v.metodo_pago
             FROM ventas v
             INNER JOIN usuarios u ON v.usuario_id = u.id
             ${filterClause}
             ORDER BY v.fecha DESC
         `, paramsVentas);
 
-        let totalFilter = "WHERE DATE(fecha) BETWEEN ? AND ?";
-        const paramsTotals = [fechaInicio, fechaFin];
+        // Fetch details in bulk to avoid subquery GROUP_CONCAT overhead
+        const ventaIds = ventasRows.map(v => v.id);
+        let productsMap = {};
+        if (ventaIds.length > 0) {
+            const [details] = await pool.query(`
+                SELECT vd.venta_id, vd.cantidad, p.nombre
+                FROM ventas_detalle vd
+                INNER JOIN productos p ON vd.producto_id = p.id
+                WHERE vd.venta_id IN (?)
+            `, [ventaIds]);
+            
+            details.forEach(d => {
+                if (!productsMap[d.venta_id]) productsMap[d.venta_id] = [];
+                productsMap[d.venta_id].push(`${d.cantidad}x ${d.nombre}`);
+            });
+        }
+
+        const ventasConProductos = ventasRows.map(v => ({
+            ...v,
+            productos: (productsMap[v.id] || []).join(', ')
+        }));
+
+        let totalFilter = "WHERE fecha >= ? AND fecha <= ?";
+        const paramsTotals = [fechaInicio, `${fechaFin} 23:59:59`];
         if (rol !== 'admin') {
             totalFilter += " AND usuario_id = ?";
             paramsTotals.push(usuarioId);
@@ -109,7 +126,7 @@ exports.ventasGenerales = async (req, res) => {
         `, paramsTotals);
 
         res.json({
-            ventas: ventasRows,
+            ventas: ventasConProductos,
             resumen: totalsRows[0]
         });
     } catch (error) {
@@ -120,8 +137,8 @@ exports.ventasGenerales = async (req, res) => {
 exports.getDashboardStats = async (req, res) => {
     const { fechaInicio, fechaFin, usuarioId } = req.query;
     try {
-        let dateFilter = "DATE(fecha) = CURDATE()";
-        let dateFilterV = "DATE(v.fecha) = CURDATE()";
+        let dateFilter = "fecha >= CURDATE() AND fecha < DATE_ADD(CURDATE(), INTERVAL 1 DAY)";
+        let dateFilterV = "v.fecha >= CURDATE() AND v.fecha < DATE_ADD(CURDATE(), INTERVAL 1 DAY)";
         const params = [];
 
         if (req.usuario.rol !== 'admin') {
@@ -136,15 +153,16 @@ exports.getDashboardStats = async (req, res) => {
         }
         
         if (fechaInicio && fechaFin) {
-            dateFilter = "DATE(fecha) BETWEEN ? AND ?" + 
+            const end = `${fechaFin} 23:59:59`;
+            dateFilter = "fecha >= ? AND fecha <= ?" + 
                 (req.usuario.rol !== 'admin' ? " AND usuario_id = ?" : 
                 (usuarioId && usuarioId !== 'todos' ? " AND usuario_id = ?" : ""));
             
-            dateFilterV = "DATE(v.fecha) BETWEEN ? AND ?" + 
+            dateFilterV = "v.fecha >= ? AND v.fecha <= ?" + 
                 (req.usuario.rol !== 'admin' ? " AND v.usuario_id = ?" : 
                 (usuarioId && usuarioId !== 'todos' ? " AND v.usuario_id = ?" : ""));
                 
-            params.unshift(fechaInicio, fechaFin);
+            params.unshift(fechaInicio, end);
         }
 
         // 1. Ventas
@@ -165,7 +183,7 @@ exports.getDashboardStats = async (req, res) => {
             INNER JOIN productos p ON vd.producto_id = p.id
             INNER JOIN ventas v ON vd.venta_id = v.id
             WHERE ${dateFilterV}
-            GROUP BY p.nombre
+            GROUP BY p.id, p.nombre
             ORDER BY cantidad DESC
             LIMIT 10
         `, params);
@@ -176,32 +194,41 @@ exports.getDashboardStats = async (req, res) => {
             FROM ventas v
             INNER JOIN usuarios u ON v.usuario_id = u.id
             WHERE ${dateFilterV}
-            GROUP BY u.nombre
+            GROUP BY u.id, u.nombre
             ORDER BY total_ventas DESC
         `, params);
 
-        // 4. Historial
+        // 4. Historial (Optimized detail fetching)
         const [historialRows] = await pool.query(`
             SELECT 
-                v.id as nota, 
-                v.cliente, 
-                v.fecha, 
-                v.total, 
-                v.metodo_pago,
-                v.monto_efectivo,
-                v.monto_tarjeta,
-                u.nombre AS vendedor,
-                (
-                    SELECT GROUP_CONCAT(CONCAT(vd.cantidad, 'x ', p.nombre) SEPARATOR ', ')
-                    FROM ventas_detalle vd
-                    INNER JOIN productos p ON vd.producto_id = p.id
-                    WHERE vd.venta_id = v.id
-                ) AS productos
+                v.id as nota, v.cliente, v.fecha, v.total, v.metodo_pago,
+                v.monto_efectivo, v.monto_tarjeta, u.nombre AS vendedor
             FROM ventas v
             INNER JOIN usuarios u ON v.usuario_id = u.id
             WHERE ${dateFilterV}
             ORDER BY v.fecha DESC
+            LIMIT 50
         `, params);
+
+        const ids = historialRows.map(h => h.nota);
+        let prodsMap = {};
+        if (ids.length > 0) {
+            const [details] = await pool.query(`
+                SELECT vd.venta_id, vd.cantidad, p.nombre
+                FROM ventas_detalle vd
+                INNER JOIN productos p ON vd.producto_id = p.id
+                WHERE vd.venta_id IN (?)
+            `, [ids]);
+            details.forEach(d => {
+                if (!prodsMap[d.venta_id]) prodsMap[d.venta_id] = [];
+                prodsMap[d.venta_id].push(`${d.cantidad}x ${d.nombre}`);
+            });
+        }
+
+        const historialFinal = historialRows.map(h => ({
+            ...h,
+            productos: (prodsMap[h.nota] || []).join(', ')
+        }));
 
         res.json({
             hoy: summaryRows[0].total_hoy,
@@ -210,7 +237,7 @@ exports.getDashboardStats = async (req, res) => {
             ventasTotales: summaryRows[0].ventas_totales,
             topProductos: topProductsRows,
             topCajeros: topCajerosRows,
-            historial: historialRows
+            historial: historialFinal
         });
     } catch (error) {
         res.status(500).json({ message: error.message });

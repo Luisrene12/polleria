@@ -7,9 +7,9 @@ const { verificarToken, esAdmin } = require('../middleware/authMiddleware');
 router.get('/', verificarToken, categoriaController.getAll);
 router.get('/:id', verificarToken, categoriaController.getById);
 
-// Escritura solo para administradores
-router.post('/', verificarToken, esAdmin, categoriaController.create);
-router.put('/:id', verificarToken, esAdmin, categoriaController.update);
-router.delete('/:id', verificarToken, esAdmin, categoriaController.delete);
+// Escritura permitida para cualquier usuario autenticado
+router.post('/', verificarToken, categoriaController.create);
+router.put('/:id', verificarToken, categoriaController.update);
+router.delete('/:id', verificarToken, categoriaController.delete);
 
 module.exports = router;

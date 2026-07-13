@@ -1,9 +1,16 @@
 const ventaModel = require('../models/ventaModel');
+const cajaModel = require('../models/cajaModel');
 
 exports.registrar = async (req, res) => {
     try {
         const { items, cliente, metodo_pago, monto_efectivo, monto_tarjeta } = req.body;
         const usuario_id = req.usuario.id;
+
+        // Validar si la caja está abierta
+        const caja = await cajaModel.getEstado(usuario_id);
+        if (!caja) {
+            return res.status(403).json({ message: 'Debes abrir caja para realizar ventas.' });
+        }
 
         let total = 0;
         const detalles = items.map(item => {

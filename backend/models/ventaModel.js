@@ -14,16 +14,18 @@ class VentaModel {
             );
             const ventaId = result.insertId;
 
-            // 2. Insertar detalles y ACTUALIZAR STOCK
+            // 2. Insertar detalles en BULK (más rápido)
+            const detalleValues = venta.items.map(item => [
+                ventaId, item.producto_id, item.cantidad, item.precio_unitario, item.subtotal
+            ]);
+            
+            await connection.query(
+                `INSERT INTO ventas_detalle (venta_id, producto_id, cantidad, precio_unitario, subtotal) VALUES ?`,
+                [detalleValues]
+            );
+
+            // 3. ACTUALIZAR STOCK (Se mantiene en loop para precisión por producto)
             for (const item of venta.items) {
-                // Insertar detalle
-                await connection.query(
-                    `INSERT INTO ventas_detalle (venta_id, producto_id, cantidad, precio_unitario, subtotal) 
-                     VALUES (?, ?, ?, ?, ?)`,
-                    [ventaId, item.producto_id, item.cantidad, item.precio_unitario, item.subtotal]
-                );
-                
-                // Descontar Stock
                 await connection.query(
                     `UPDATE productos SET stock = stock - ? WHERE id = ?`,
                     [item.cantidad, item.producto_id]

@@ -29,13 +29,13 @@ function App() {
             <Route path="/" element={<Navigate to="/ventas/nueva" />} />
             
             <Route element={<Layout />}>
-              {/* Rutas para Ventas (Todos) */}
-              <Route element={<ProtectedRoute allowedRoles={allRoles} />}>
+              {/* Rutas para Ventas (Todos los autenticados) */}
+              <Route element={<ProtectedRoute />}>
                 <Route path="/ventas/nueva" element={<NuevaVenta />} />
               </Route>
 
-              {/* Rutas para Gestión y Configuración (Admin y Cajeros) */}
-              <Route element={<ProtectedRoute allowedRoles={allRoles} />}>
+              {/* Rutas para Gestión y Configuración (Todos los autenticados) */}
+              <Route element={<ProtectedRoute />}>
                 <Route path="/productos" element={<ProductosAdmin />} />
                 <Route path="/categorias" element={<CategoriasAdmin />} />
                 <Route path="/whatsapp" element={<WhatsAppConfig />} />

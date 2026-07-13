@@ -1,4 +1,4 @@
-const { getClient, getIsReady, sendMessageToOwner, sendFileToOwner, getLastQr, logoutWhatsApp, initWhatsApp } = require('../services/whatsappService');
+const { getClient, getIsReady, sendMessageToOwner, sendFileToOwner, getLastQr, logoutWhatsApp, initWhatsApp, fullResetWhatsApp } = require('../services/whatsappService');
 const { pool } = require('../config/db');
 const PDFDocument = require('pdfkit-table');
 const { Buffer } = require('buffer');
@@ -68,6 +68,18 @@ exports.reset = async (req, res) => {
 };
 
 /**
+ * Reinicio completo: borra sesión, lock files y reconecta desde cero
+ */
+exports.fullReset = async (req, res) => {
+    try {
+        await fullResetWhatsApp();
+        res.json({ success: true, message: 'Reinicio completo. Generando nuevo QR desde cero...' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
  * Envía un resumen de ventas del día por WhatsApp
  */
 exports.sendDailyReport = async (req, res) => {
@@ -79,7 +91,7 @@ exports.sendDailyReport = async (req, res) => {
                 IFNULL(SUM(CASE WHEN metodo_pago = 'efectivo' THEN total ELSE monto_efectivo END), 0) AS total_efectivo,
                 IFNULL(SUM(CASE WHEN metodo_pago IN ('qr', 'tarjeta') THEN total ELSE monto_tarjeta END), 0) AS total_qr
             FROM ventas 
-            WHERE DATE(fecha) = CURDATE()
+            WHERE fecha >= CURDATE() AND fecha < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
         `);
 
         const stats = rows[0];
@@ -145,7 +157,7 @@ exports.sendPDFReport = async (req, res) => {
                 IFNULL(SUM(CASE WHEN metodo_pago = 'efectivo' THEN total ELSE monto_efectivo END), 0) AS total_efectivo,
                 IFNULL(SUM(CASE WHEN metodo_pago IN ('qr', 'tarjeta') THEN total ELSE monto_tarjeta END), 0) AS total_qr
             FROM ventas 
-            WHERE DATE(fecha) = CURDATE()
+            WHERE fecha >= CURDATE() AND fecha < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
         `);
         const stats = statsRows[0];
 
@@ -154,7 +166,7 @@ exports.sendPDFReport = async (req, res) => {
             SELECT v.id, v.cliente, v.total, v.metodo_pago, v.monto_efectivo, v.monto_tarjeta, DATE_FORMAT(v.fecha, '%H:%i') as hora, u.nombre as vendedor
             FROM ventas v
             JOIN usuarios u ON v.usuario_id = u.id
-            WHERE DATE(v.fecha) = CURDATE()
+            WHERE v.fecha >= CURDATE() AND v.fecha < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
             ORDER BY v.fecha DESC
         `);
 

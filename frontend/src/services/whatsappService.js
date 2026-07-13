@@ -194,3 +194,23 @@ export const sendPDFReport = async () => {
     toast.error('Error al generar el reporte PDF');
   }
 };
+
+/**
+ * Reinicio completo: borra toda la sesión y reconecta desde cero
+ */
+export const fullResetWhatsApp = async () => {
+  try {
+    toast.loading('Reinicio completo en progreso...', { id: 'full-reset-toast' });
+    const response = await api.post('/whatsapp/full-reset');
+    toast.dismiss('full-reset-toast');
+    
+    if (response.data.success) {
+      toast.success('Reinicio completo. Espere el nuevo QR...');
+    }
+    return response.data;
+  } catch (error) {
+    toast.dismiss('full-reset-toast');
+    console.error('Error al reiniciar completamente WhatsApp:', error);
+    toast.error('Error al reiniciar completamente el servicio');
+  }
+};
