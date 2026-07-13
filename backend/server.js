@@ -39,10 +39,23 @@ app.use(helmet({
 app.use(compression());
 
 // 3. CORS seguro estricto al frontend
+const allowedOrigins = [
+    'http://localhost:5173',
+    'https://tiny-narwhal-183960.netlify.app'
+];
+
 app.use(cors({
-    origin: 'http://localhost:5173', // Restringido solo al Frontend local (cámbialo en producción)
+    origin: function (origin, callback) {
+        // Permite peticiones sin origin (como Postman) o de la lista permitida
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('No permitido por CORS'));
+        }
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
 }));
 
 // 4. Parser de JSON con límite de tamaño de payload (mitiga DoS de payloads gigantes)
@@ -99,26 +112,26 @@ app.get('/api/health', (req, res) => {
 // ─── SEEDER DE USUARIO ADMINISTRADOR ──────────────────────────────────────────
 const usuarioModel = require('./models/usuarioModel');
 (async () => {
-  try {
-    const admin = await usuarioModel.findByUsername('admin');
-    if (!admin) {
-      const bcrypt = require('bcryptjs');
-      const hashed = await bcrypt.hash('1234', 10); // default PIN 1234
-      await usuarioModel.create({ nombre: 'Administrador', username: 'admin', pin_hash: hashed, rol: 'admin' });
-      console.log('✅ Admin user creado: username "admin", PIN "1234"');
+    try {
+        const admin = await usuarioModel.findByUsername('admin');
+        if (!admin) {
+            const bcrypt = require('bcryptjs');
+            const hashed = await bcrypt.hash('1234', 10); // default PIN 1234
+            await usuarioModel.create({ nombre: 'Administrador', username: 'admin', pin_hash: hashed, rol: 'admin' });
+            console.log('✅ Admin user creado: username "admin", PIN "1234"');
+        }
+    } catch (e) {
+        console.error('Error seeding admin user:', e);
     }
-  } catch (e) {
-    console.error('Error seeding admin user:', e);
-  }
 })();
 
 // ─── MIDDLEWARE GLOBAL DE MANEJO DE ERRORES (Saneamiento) ──────────────────────
 app.use((err, req, res, next) => {
     console.error('❌ Error no controlado en la aplicación:', err.stack);
-    
+
     // Ocultar detalles del error (stack trace) al cliente para evitar fugas de información
     const isDevelopment = process.env.NODE_ENV === 'development';
-    
+
     res.status(err.status || 500).json({
         success: false,
         message: err.message || 'Ocurrió un error interno en el servidor.',
