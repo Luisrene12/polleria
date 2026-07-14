@@ -270,7 +270,7 @@ export default function NuevaVenta() {
                     <h3 className="font-bold text-white text-sm md:text-base leading-snug mb-2 line-clamp-2" title={p.nombre}>{p.nombre}</h3>
                     <div className="mt-auto">
                       <div className="flex items-end justify-between mb-4 mt-2">
-                        <p className="text-orange-400 font-black text-xl tracking-tight leading-none">Bs. {Number(p.precio_venta).toFixed(2)}</p>
+                        <p className="text-orange-400 font-black text-xl tracking-tight leading-none">{Number(p.precio_venta).toFixed(2)} Bs</p>
                         <p className="text-[10px] text-slate-400 font-bold tracking-widest uppercase bg-slate-900/60 border border-slate-700 px-2 py-0.5 rounded-md">Stock: {p.stock}</p>
                       </div>
                       <button 
