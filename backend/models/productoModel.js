@@ -7,7 +7,7 @@ class ProductoModel {
                    p.categoria_id, p.costo, p.stock, p.minStock, p.imagen, p.activo,
                    c.nombre as categoria_nombre 
             FROM productos p
-            LEFT JOIN Categorias c ON p.categoria_id = c.id
+            LEFT JOIN categorias c ON p.categoria_id = c.id
             WHERE p.activo = 1
         `;
         const params = [];
@@ -16,7 +16,7 @@ class ProductoModel {
             query += ` AND p.nombre LIKE ?`;
             params.push(`%${search}%`);
         }
-        
+
         if (categoriaId) {
             query += ` AND p.categoria_id = ?`;
             params.push(categoriaId);
@@ -34,7 +34,7 @@ class ProductoModel {
                    p.categoria_id, p.costo, p.stock, p.minStock, p.imagen, p.activo,
                    c.nombre as categoria_nombre 
             FROM productos p
-            LEFT JOIN Categorias c ON p.categoria_id = c.id
+            LEFT JOIN categorias c ON p.categoria_id = c.id
             WHERE p.id = ? AND p.activo = 1
         `, [id]);
         return rows[0];
