@@ -1,80 +1,122 @@
-USE [polleria];
-GO
+USE `polleria`;
 
--- 1. Crear tabla Categorias si no existe
-IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Categorias' AND xtype='U')
-BEGIN
-    CREATE TABLE Categorias (
-        id INT IDENTITY(1,1) PRIMARY KEY,
-        nombre VARCHAR(100) NOT NULL UNIQUE,
-        descripcion TEXT,
-        activa BIT DEFAULT 1,
-        creado_en DATETIME DEFAULT GETDATE(),
-        actualizado_en DATETIME DEFAULT GETDATE()
-    );
-    PRINT 'Tabla Categorias creada exitosamente.';
-END
-GO
+# =============================================================
+# TABLA 1: Usuarios
+# =============================================================
+CREATE TABLE IF NOT EXISTS `Usuarios` (
+    `id`          INT AUTO_INCREMENT PRIMARY KEY,
+    `nombre`      VARCHAR(100)  NOT NULL,
+    `username`    VARCHAR(50)   NOT NULL UNIQUE,
+    `pin_hash`    VARCHAR(255)  NOT NULL,
+    `rol`         VARCHAR(20)   NOT NULL DEFAULT 'seller',
+    `activo`      TINYINT(1)    NOT NULL DEFAULT 1,
+    `creado_en`   TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Insertamos algunas categorías base
-IF NOT EXISTS (SELECT 1 FROM Categorias WHERE nombre = 'Pollo a la Brasa')
-BEGIN
-    INSERT INTO Categorias (nombre, descripcion) VALUES ('Pollo a la Brasa', 'Diferentes porciones de pollo a la brasa');
-    INSERT INTO Categorias (nombre, descripcion) VALUES ('Bebidas', 'Gaseosas, refrescos y cervezas');
-    INSERT INTO Categorias (nombre, descripcion) VALUES ('Guarniciones', 'Papas fritas, ensaladas, etc.');
-    INSERT INTO Categorias (nombre, descripcion) VALUES ('Extras', 'Cremas extra, porciones adicionales');
-    PRINT 'Categorías por defecto insertadas.';
-END
-GO
+# =============================================================
+# TABLA 2: Categorias
+# =============================================================
+CREATE TABLE IF NOT EXISTS `Categorias` (
+    `id`          INT AUTO_INCREMENT PRIMARY KEY,
+    `nombre`      VARCHAR(100)  NOT NULL UNIQUE,
+    `descripcion` TEXT,
+    `activa`      TINYINT(1)    NOT NULL DEFAULT 1,
+    `creado_en`   TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 2. Modificar la tabla Usuarios para soportar PIN y roles específicos
--- Verificamos si existe la columna pin_hash, si no, la creamos y renombramos password_hash
-IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'pin_hash' AND Object_ID = Object_ID(N'Usuarios'))
-BEGIN
-    -- Añadir columna pin_hash
-    ALTER TABLE Usuarios ADD pin_hash VARCHAR(255);
-    PRINT 'Columna pin_hash agregada a Usuarios.';
-    
-    -- Hacer que password_hash permita NULLs temporalmente
-    ALTER TABLE Usuarios ALTER COLUMN password_hash VARCHAR(255) NULL;
-END
-GO
+# =============================================================
+# TABLA 3: Productos
+# =============================================================
+CREATE TABLE IF NOT EXISTS `productos` (
+    `id`             INT AUTO_INCREMENT PRIMARY KEY,
+    `codigo`         VARCHAR(50)   UNIQUE,
+    `nombre`         VARCHAR(100)  NOT NULL,
+    `descripcion`    TEXT,
+    `precio_venta`   DECIMAL(10,2) NOT NULL,
+    `costo`          DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    `stock`          INT           NOT NULL DEFAULT 0,
+    `minStock`       INT           NOT NULL DEFAULT 5,
+    `categoria_id`   INT,
+    `imagen`         VARCHAR(255),
+    `activo`         TINYINT(1)    NOT NULL DEFAULT 1,
+    `creado_en`      TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT `fk_producto_categoria`
+        FOREIGN KEY (`categoria_id`) REFERENCES `Categorias`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 3. Modificar la tabla Productos para incluir las nuevas columnas
-IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'categoria_id' AND Object_ID = Object_ID(N'productos'))
-BEGIN
-    -- Añadimos las nuevas columnas
-    ALTER TABLE productos ADD categoria_id INT FOREIGN KEY REFERENCES Categorias(id) ON DELETE NO ACTION;
-    ALTER TABLE productos ADD costo DECIMAL(10,2) DEFAULT 0.00;
-    ALTER TABLE productos ADD stock INT DEFAULT 0;
-    ALTER TABLE productos ADD minStock INT DEFAULT 5;
-    ALTER TABLE productos ADD imagen VARCHAR(255); -- URL o path de la imagen
-    
-    PRINT 'Nuevas columnas añadidas a la tabla productos.';
-END
-GO
+# =============================================================
+# TABLA 4: Ventas
+# =============================================================
+CREATE TABLE IF NOT EXISTS `ventas` (
+    `id`             INT AUTO_INCREMENT PRIMARY KEY,
+    `usuario_id`     INT           NOT NULL,
+    `fecha`          TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `total`          DECIMAL(10,2) NOT NULL,
+    `cliente`        VARCHAR(100)  NOT NULL DEFAULT 'Cliente Mostrador',
+    `metodo_pago`    ENUM('efectivo','qr','tarjeta','mixto') NOT NULL DEFAULT 'efectivo',
+    `monto_efectivo` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    `monto_tarjeta`  DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    CONSTRAINT `fk_venta_usuario`
+        FOREIGN KEY (`usuario_id`) REFERENCES `Usuarios`(`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Actualizamos los productos existentes para que pertenezcan a la primera categoría por defecto (Pollo a la Brasa)
-UPDATE productos SET categoria_id = (SELECT TOP 1 id FROM Categorias WHERE nombre = 'Pollo a la Brasa') WHERE categoria_id IS NULL;
-GO
+# =============================================================
+# TABLA 5: Ventas Detalle
+# =============================================================
+CREATE TABLE IF NOT EXISTS `ventas_detalle` (
+    `id`               INT AUTO_INCREMENT PRIMARY KEY,
+    `venta_id`         INT           NOT NULL,
+    `producto_id`      INT           NOT NULL,
+    `cantidad`         INT           NOT NULL,
+    `precio_unitario`  DECIMAL(10,2) NOT NULL,
+    `subtotal`         DECIMAL(10,2) NOT NULL,
+    CONSTRAINT `fk_detalle_venta`
+        FOREIGN KEY (`venta_id`)    REFERENCES `ventas`(`id`)    ON DELETE CASCADE,
+    CONSTRAINT `fk_detalle_producto`
+        FOREIGN KEY (`producto_id`) REFERENCES `productos`(`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Actualizamos a todos los usuarios actuales con un PIN por defecto '1234'
--- Hash de "1234" = $2a$10$JVOpnUUL.n6HV2/STf8ov1wRanp3aqxkb5K8SvbYkf...
-UPDATE Usuarios SET pin_hash = '$2a$10$JVOpnUUL.n6HV2/STf8ov1wRanp3aqxkb5K8SvbYkf' WHERE pin_hash IS NULL;
-UPDATE Usuarios SET rol = 'admin' WHERE rol IS NULL;
-GO
+# =============================================================
+# TABLA 6: Cierres de Caja
+# =============================================================
+CREATE TABLE IF NOT EXISTS `cierres_caja` (
+    `id`                    INT AUTO_INCREMENT PRIMARY KEY,
+    `usuario_id`            INT           NOT NULL,
+    `fecha_apertura`        TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `fecha_cierre`          TIMESTAMP     NULL,
+    `monto_inicial`         DECIMAL(10,2) NOT NULL,
+    `monto_final_calculado` DECIMAL(10,2),
+    `monto_final_real`      DECIMAL(10,2),
+    `diferencia`            DECIMAL(10,2) GENERATED ALWAYS AS (`monto_final_real` - `monto_final_calculado`) STORED,
+    `estado`                ENUM('abierto','cerrado') NOT NULL DEFAULT 'abierto',
+    CONSTRAINT `fk_caja_usuario`
+        FOREIGN KEY (`usuario_id`) REFERENCES `Usuarios`(`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 4. Crear tabla Reporte
-IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Reporte' AND xtype='U')
-BEGIN
-    CREATE TABLE Reporte (
-        id INT IDENTITY(1,1) PRIMARY KEY,
-        nombre VARCHAR(100) NOT NULL,
-        descripcion TEXT NULL,
-        datos NVARCHAR(MAX) NULL,
-        creado_en DATETIME DEFAULT GETDATE(),
-        actualizado_en DATETIME DEFAULT GETDATE()
-    );
-    PRINT 'Tabla Reporte creada exitosamente.';
-END
-GO
+# =============================================================
+# TABLA 7: Reporte
+# =============================================================
+CREATE TABLE IF NOT EXISTS `Reporte` (
+    `id`              INT AUTO_INCREMENT PRIMARY KEY,
+    `nombre`          VARCHAR(100) NOT NULL,
+    `descripcion`     TEXT,
+    `datos`           JSON,
+    `creado_en`       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `actualizado_en`  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+# =============================================================
+# DATOS INICIALES (SEED)
+# =============================================================
+
+# Categorias por defecto
+INSERT IGNORE INTO `Categorias` (`nombre`, `descripcion`) VALUES
+    ('Pollo a la Brasa', 'Diferentes porciones de pollo a la brasa'),
+    ('Bebidas',          'Gaseosas, refrescos y cervezas'),
+    ('Guarniciones',     'Papas fritas, ensaladas y otros acompanamientos'),
+    ('Menus',            'Combos y menus del dia'),
+    ('Extras',           'Cremas extra, porciones adicionales');
+
+# Usuario administrador por defecto  (PIN: 1234)
+INSERT IGNORE INTO `Usuarios` (`nombre`, `username`, `pin_hash`, `rol`) VALUES
+    ('Administrador', 'admin', '$2a$10$JVOpnUUL.n6HV2/STf8ov1wRanp3aqxkb5K8SvbYkfjb.9TcPn.jS', 'admin');

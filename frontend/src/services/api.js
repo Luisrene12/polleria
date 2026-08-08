@@ -2,88 +2,68 @@ import axios from 'axios';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:3001/api',
-  timeout: 15000, // Timeout de 15 segundos para evitar peticiones colgadas
+  timeout: 10000, // 10 s (reducido de 15 s)
 });
 
-// Interceptor de Peticiones
+// ─── INTERCEPTOR DE PETICIONES ────────────────────────────────────────────────
 api.interceptors.request.use(
   (config) => {
-    // Adjuntar token de autenticación
     const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    if (token) config.headers.Authorization = `Bearer ${token}`;
 
-    // Sanitización básica en el payload de datos para prevenir inyecciones (XSS)
     if (config.data && typeof config.data === 'object') {
       config.data = sanitizePayload(config.data);
     }
-
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// Interceptor de Respuestas (Manejo Centralizado de Errores y Seguridad)
+// ─── INTERCEPTOR DE RESPUESTAS ────────────────────────────────────────────────
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    // Si el servidor retorna 401 (Sin autorización) o 403 (Prohibido/Token Expirado)
-    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-      console.warn('⚠️ Sesión inválida o expirada. Redirigiendo al login...');
-      
-      // Limpiar token local para evitar mantener sesiones huérfanas
+  async (error) => {
+    const config = error.config || {};
+
+    // Redirigir si sesión expirada
+    if (error.response?.status === 401 || error.response?.status === 403) {
       localStorage.removeItem('token');
-      
-      // Redirigir al login si no estamos ya allí
       if (!window.location.pathname.includes('/login')) {
         window.location.href = '/login';
       }
+      return Promise.reject(error);
     }
 
-    // Si el servidor está caído o hay problemas de red
-    if (error.code === 'ECONNABORTED') {
-      console.error('❌ Tiempo de espera agotado al conectar con el servidor.');
+    // Retry automático en errores de red / timeout (máx 1 reintento)
+    const isNetworkError = !error.response;
+    const isTimeout      = error.code === 'ECONNABORTED';
+    if ((isNetworkError || isTimeout) && !config._retried) {
+      config._retried = true;
+      console.warn('⚠️ Reintentando petición...', config.url);
+      await new Promise(r => setTimeout(r, 800)); // espera 800 ms antes de reintentar
+      return api(config);
     }
 
     return Promise.reject(error);
   }
 );
 
-/**
- * Función auxiliar para sanitizar strings y remover etiquetas HTML/Scripts sospechosas
- */
+// ─── SANITIZACIÓN DE PAYLOAD ──────────────────────────────────────────────────
 function sanitizePayload(data) {
-  const sanitizeString = (str) => {
-    // Remueve etiquetas HTML y tags <script> básicas
-    return str
+  const sanitizeString = (str) =>
+    str
       .replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, '')
       .replace(/<\/?[^>]+(>|$)/g, '');
-  };
 
   const traverse = (obj) => {
     if (obj === null || obj === undefined) return obj;
-    
-    if (typeof obj === 'string') {
-      return sanitizeString(obj);
-    }
-    
-    if (Array.isArray(obj)) {
-      return obj.map(item => traverse(item));
-    }
-    
+    if (typeof obj === 'string')  return sanitizeString(obj);
+    if (Array.isArray(obj))       return obj.map(traverse);
     if (typeof obj === 'object') {
-      const sanitized = {};
-      for (const key in obj) {
-        if (Object.prototype.hasOwnProperty.call(obj, key)) {
-          sanitized[key] = traverse(obj[key]);
-        }
-      }
-      return sanitized;
+      const out = {};
+      for (const key of Object.keys(obj)) out[key] = traverse(obj[key]);
+      return out;
     }
-    
     return obj;
   };
 
