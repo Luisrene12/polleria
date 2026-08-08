@@ -8,6 +8,7 @@ const pool = mysql.createPool({
     database:           process.env.DB_DATABASE || 'polleria',
     port:               Number(process.env.DB_PORT) || 3306,
     charset:            'utf8mb4',
+    timezone:           process.env.DB_TIMEZONE || '-04:00', // Sincroniza la zona horaria del servidor de BD
 
     // Pool optimizado
     waitForConnections:  true,
