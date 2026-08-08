@@ -5,12 +5,7 @@
 --               para el sistema de punto de venta de pollería.
 -- =============================================================
 
--- Crear y seleccionar la base de datos
-CREATE DATABASE IF NOT EXISTS polleria
-    CHARACTER SET utf8mb4
-    COLLATE utf8mb4_unicode_ci;
 
-USE polleria;
 
 -- =============================================================
 -- TABLA 1: Usuarios
