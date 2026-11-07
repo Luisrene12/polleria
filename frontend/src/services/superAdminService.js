@@ -1,0 +1,165 @@
+import api from './api';
+
+// ─── 1. DASHBOARD ────────────────────────────────────────────────────────────
+export const getSuperAdminDashboard = async () => {
+  const response = await api.get('/super-admin/dashboard');
+  return response.data;
+};
+
+// ─── 2. RESTAURANTES (NEGOCIOS) ──────────────────────────────────────────────
+export const getNegocios = async (params = {}) => {
+  const response = await api.get('/super-admin/negocios', { params });
+  return response.data;
+};
+
+export const getNegocioById = async (id) => {
+  const response = await api.get(`/super-admin/negocios/${id}`);
+  return response.data;
+};
+
+export const createNegocio = async (payload) => {
+  const response = await api.post('/super-admin/negocios', payload);
+  return response.data;
+};
+
+export const updateNegocio = async (id, payload) => {
+  const response = await api.put(`/super-admin/negocios/${id}`, payload);
+  return response.data;
+};
+
+export const toggleEstadoNegocio = async (id, motivo = '') => {
+  const response = await api.post(`/super-admin/negocios/${id}/toggle-estado`, { motivo });
+  return response.data;
+};
+
+export const resetAdminPassword = async (id, newPassword) => {
+  const response = await api.post(`/super-admin/negocios/${id}/reset-password`, { new_password: newPassword });
+  return response.data;
+};
+
+// ─── 3. DOMINIOS Y URL ───────────────────────────────────────────────────────
+export const getDominios = async () => {
+  const response = await api.get('/super-admin/dominios');
+  return response.data;
+};
+
+export const checkDisponibilidadSubdominio = async (subdominio) => {
+  const response = await api.get('/super-admin/dominios/check-availability', { params: { subdominio } });
+  return response.data;
+};
+
+export const updateDominio = async (id, payload) => {
+  const response = await api.put(`/super-admin/dominios/${id}`, payload);
+  return response.data;
+};
+
+// ─── 4. PLANES Y SUSCRIPCIONES ───────────────────────────────────────────────
+export const getPlanes = async () => {
+  const response = await api.get('/super-admin/planes');
+  return response.data;
+};
+
+export const createPlan = async (payload) => {
+  const response = await api.post('/super-admin/planes', payload);
+  return response.data;
+};
+
+export const updatePlan = async (id, payload) => {
+  const response = await api.put(`/super-admin/planes/${id}`, payload);
+  return response.data;
+};
+
+export const getSuscripciones = async (params = {}) => {
+  const response = await api.get('/super-admin/suscripciones', { params });
+  return response.data;
+};
+
+export const renovarSuscripcion = async (id, meses = 1) => {
+  const response = await api.post(`/super-admin/suscripciones/${id}/renovar`, { meses });
+  return response.data;
+};
+
+// ─── 5. PAGOS Y CONTROL FINANCIERO ───────────────────────────────────────────
+export const getPagos = async (params = {}) => {
+  const response = await api.get('/super-admin/pagos', { params });
+  return response.data;
+};
+
+export const createPago = async (payload) => {
+  const response = await api.post('/super-admin/pagos', payload);
+  return response.data;
+};
+
+export const verificarPago = async (id, observaciones = '') => {
+  const response = await api.post(`/super-admin/pagos/${id}/verificar`, { observaciones });
+  return response.data;
+};
+
+export const rechazarPago = async (id, motivo = '') => {
+  const response = await api.post(`/super-admin/pagos/${id}/rechazar`, { motivo });
+  return response.data;
+};
+
+// ─── 6. MÓDULOS Y FUNCIONALIDADES ────────────────────────────────────────────
+export const getModulosGlobales = async () => {
+  const response = await api.get('/super-admin/modulos');
+  return response.data;
+};
+
+export const getModulosNegocio = async (negocioId) => {
+  const response = await api.get(`/super-admin/negocios/${negocioId}/modulos`);
+  return response.data;
+};
+
+export const toggleModuloNegocio = async (negocioId, funcionalidadId, habilitado) => {
+  const response = await api.post(`/super-admin/negocios/${negocioId}/modulos/${funcionalidadId}/toggle`, { habilitado });
+  return response.data;
+};
+
+// ─── 7. USUARIOS DE LA PLATAFORMA ────────────────────────────────────────────
+export const getUsuarios = async (params = {}) => {
+  const response = await api.get('/super-admin/usuarios', { params });
+  return response.data;
+};
+
+export const createUsuario = async (payload) => {
+  const response = await api.post('/super-admin/usuarios', payload);
+  return response.data;
+};
+
+export const toggleUsuarioActivo = async (id) => {
+  const response = await api.post(`/super-admin/usuarios/${id}/toggle-activo`);
+  return response.data;
+};
+
+// ─── 8. SOPORTE TÉCNICO ──────────────────────────────────────────────────────
+export const getTickets = async (params = {}) => {
+  const response = await api.get('/super-admin/soporte/tickets', { params });
+  return response.data;
+};
+
+export const getTicketById = async (id) => {
+  const response = await api.get(`/super-admin/soporte/tickets/${id}`);
+  return response.data;
+};
+
+export const responderTicket = async (id, mensaje) => {
+  const response = await api.post(`/super-admin/soporte/tickets/${id}/responder`, { mensaje });
+  return response.data;
+};
+
+export const updateEstadoTicket = async (id, estado) => {
+  const response = await api.put(`/super-admin/soporte/tickets/${id}/estado`, { estado });
+  return response.data;
+};
+
+// ─── 9. AUDITORÍA Y NOTIFICACIONES ───────────────────────────────────────────
+export const getAuditoria = async (params = {}) => {
+  const response = await api.get('/super-admin/auditoria', { params });
+  return response.data;
+};
+
+export const getNotificaciones = async () => {
+  const response = await api.get('/super-admin/notificaciones');
+  return response.data;
+};

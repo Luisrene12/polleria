@@ -96,22 +96,22 @@ export default function VentasPorProducto() {
 
   const btnClass = (tipo) => `px-5 py-2.5 rounded-xl font-bold transition-all text-sm shadow-sm hover:-translate-y-0.5 ${
     filtroActivo === tipo
-      ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-red-600 text-white shadow-lg shadow-orange-500/30 border-transparent'
-      : 'bg-slate-800/80 text-slate-300 border border-slate-700/50 hover:bg-slate-700 hover:border-slate-500'
+      ? 'bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 text-white shadow-lg shadow-violet-600/30 border-transparent'
+      : 'bg-zinc-950/80 text-slate-300 border border-zinc-800 hover:bg-slate-700 hover:border-slate-500'
   }`;
 
   return (
     <div className="bg-transparent min-h-screen p-6 sm:p-8 max-w-6xl mx-auto h-full flex flex-col space-y-8 animate-in fade-in duration-500 relative z-10">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-tr from-amber-500 to-orange-600 p-2.5 rounded-2xl shadow-lg shadow-orange-500/30">
+          <div className="bg-gradient-to-tr from-violet-600 to-indigo-600 p-2.5 rounded-2xl shadow-lg shadow-violet-600/30">
             <span className="text-2xl text-white">🏆</span>
           </div>
           <div>
             <h1 className="text-2xl font-black text-white tracking-tight uppercase">
-              Ventas por <span className="text-orange-500">Producto</span>
+              Ventas por <span className="text-amber-400">Producto</span>
             </h1>
-            <p className="text-orange-400 font-bold mt-2 uppercase tracking-widest text-[10px]">Análisis de los productos más vendidos</p>
+            <p className="text-amber-400 font-bold mt-2 uppercase tracking-widest text-[10px]">Análisis de los productos más vendidos</p>
           </div>
         </div>
         <button 
@@ -125,7 +125,7 @@ export default function VentasPorProducto() {
       {/* Filtros */}
       <div className="flex flex-col gap-4 mb-8">
         {/* Botones rápidos */}
-        <div className="flex flex-wrap gap-3 bg-slate-900/60 backdrop-blur-md p-2 rounded-2xl shadow-sm border border-slate-700/50 w-fit">
+        <div className="flex flex-wrap gap-3 bg-zinc-900/80 backdrop-blur-md p-2 rounded-2xl shadow-sm border border-zinc-800 w-fit">
           <button onClick={() => handleFiltro('hoy')} className={btnClass('hoy')}>📅 Hoy</button>
           <button onClick={() => handleFiltro('semana')} className={btnClass('semana')}>📅 Esta Semana</button>
           <button onClick={() => handleFiltro('mes')} className={btnClass('mes')}>📅 Este Mes</button>
@@ -134,7 +134,7 @@ export default function VentasPorProducto() {
         {/* Filtro personalizado */}
         <form
           onSubmit={handleFiltroPersonalizado}
-          className="flex flex-wrap items-end gap-3 bg-slate-900/60 backdrop-blur-md p-4 rounded-2xl shadow-sm border border-slate-700/50 w-fit"
+          className="flex flex-wrap items-end gap-3 bg-zinc-900/80 backdrop-blur-md p-4 rounded-2xl shadow-sm border border-zinc-800 w-fit"
         >
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">Desde</label>
@@ -142,8 +142,8 @@ export default function VentasPorProducto() {
               type="date"
               value={fechaInicioCust}
               onChange={e => setFechaInicioCust(e.target.value)}
-              className={`px-4 py-2.5 border rounded-xl outline-none text-white font-semibold text-sm shadow-sm transition-all focus:ring-4 focus:ring-orange-500/20 focus:border-orange-500 ${
-                filtroActivo === 'personalizado' ? 'border-orange-500 bg-slate-800' : 'border-slate-700 bg-slate-800/80'
+              className={`px-4 py-2.5 border rounded-xl outline-none text-white font-semibold text-sm shadow-sm transition-all focus:ring-4 focus:ring-orange-500/20 focus:border-violet-500 ${
+                filtroActivo === 'personalizado' ? 'border-violet-500 bg-slate-800' : 'border-slate-700 bg-zinc-950/80'
               }`}
             />
           </div>
@@ -153,8 +153,8 @@ export default function VentasPorProducto() {
               type="date"
               value={fechaFinCust}
               onChange={e => setFechaFinCust(e.target.value)}
-              className={`px-4 py-2.5 border rounded-xl outline-none text-white font-semibold text-sm shadow-sm transition-all focus:ring-4 focus:ring-orange-500/20 focus:border-orange-500 ${
-                filtroActivo === 'personalizado' ? 'border-orange-500 bg-slate-800' : 'border-slate-700 bg-slate-800/80'
+              className={`px-4 py-2.5 border rounded-xl outline-none text-white font-semibold text-sm shadow-sm transition-all focus:ring-4 focus:ring-orange-500/20 focus:border-violet-500 ${
+                filtroActivo === 'personalizado' ? 'border-violet-500 bg-slate-800' : 'border-slate-700 bg-zinc-950/80'
               }`}
             />
           </div>
@@ -173,16 +173,16 @@ export default function VentasPorProducto() {
       </div>
 
       {/* Tabla */}
-      <div className="bg-slate-900/60 backdrop-blur-md rounded-3xl shadow-xl border border-slate-700/50 overflow-hidden flex-1 flex flex-col">
+      <div className="bg-zinc-900/80 backdrop-blur-md rounded-3xl shadow-xl border border-zinc-800 overflow-hidden flex-1 flex flex-col">
         {loading ? (
           <div className="flex items-center justify-center flex-1 py-20">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-violet-500"></div>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-slate-800/80 text-slate-400 text-[11px] font-bold uppercase tracking-widest border-b border-slate-700/50">
+                <tr className="bg-zinc-950/80 text-slate-400 text-[11px] font-bold uppercase tracking-widest border-b border-zinc-800">
                   <th className="p-5 font-semibold w-10 text-center">#</th>
                   <th className="p-5 font-semibold">Producto</th>
                   <th className="p-5 font-semibold text-center">Cantidad Vendida</th>
@@ -208,12 +208,12 @@ export default function VentasPorProducto() {
                       </div>
                     </td>
                     <td className="p-5 text-center">
-                      <span className="bg-slate-800/80 border border-slate-700/50 px-3 py-1 rounded-full text-xs font-bold text-slate-300">
+                      <span className="bg-zinc-950/80 border border-zinc-800 px-3 py-1 rounded-full text-xs font-bold text-slate-300">
                         {item.cantidad_vendida} <span className="font-medium text-slate-500">uni.</span>
                       </span>
                     </td>
                     <td className="p-5 text-right">
-                      <span className="font-black text-orange-400 text-base drop-shadow-sm">Bs. {Number(item.total).toFixed(2)}</span>
+                      <span className="font-black text-amber-400 text-base drop-shadow-sm">Bs. {Number(item.total).toFixed(2)}</span>
                     </td>
                   </tr>
                 ))}

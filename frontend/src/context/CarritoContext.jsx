@@ -8,15 +8,31 @@ export const CarritoProvider = ({ children }) => {
   const [carrito, setCarrito] = useState([]);
 
   const agregarProducto = (producto, parte = '') => {
+    const precioBase = Number(producto.precio_venta) || 0;
+    const desc = Number(producto.descuento) || 0;
+    const precioEfectivo = Math.max(0, precioBase - desc);
+
     setCarrito(prev => {
-      // Ahora buscamos por ID y también por la parte elegida
+      // Buscamos por ID y también por la presa/nota elegida
       const existente = prev.find(p => p.id === producto.id && p.parte === parte);
       if (existente) {
         return prev.map(p =>
-          (p.id === producto.id && p.parte === parte) ? { ...p, cantidad: p.cantidad + 1 } : p
+          (p.id === producto.id && p.parte === parte) 
+            ? { ...p, cantidad: p.cantidad + 1 } 
+            : p
         );
       }
-      return [...prev, { ...producto, cantidad: 1, parte }];
+      return [
+        ...prev, 
+        { 
+          ...producto, 
+          precio_venta: precioBase,
+          descuento: desc,
+          precio_efectivo: precioEfectivo,
+          cantidad: 1, 
+          parte 
+        }
+      ];
     });
   };
 
@@ -42,7 +58,10 @@ export const CarritoProvider = ({ children }) => {
 
   const limpiarCarrito = () => setCarrito([]);
 
-  const total = carrito.reduce((sum, p) => sum + p.cantidad * p.precio_venta, 0);
+  // Cálculos de totales y descuentos
+  const subtotal = carrito.reduce((sum, p) => sum + (p.cantidad * (Number(p.precio_venta) || 0)), 0);
+  const totalDescuento = carrito.reduce((sum, p) => sum + (p.cantidad * (Number(p.descuento) || 0)), 0);
+  const total = Math.max(0, subtotal - totalDescuento);
 
   return (
     <CarritoContext.Provider value={{
@@ -52,6 +71,8 @@ export const CarritoProvider = ({ children }) => {
       actualizarCantidad,
       actualizarNota,
       limpiarCarrito,
+      subtotal,
+      totalDescuento,
       total
     }}>
       {children}

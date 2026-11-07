@@ -12,12 +12,22 @@ dist
 dist-ssr
 *.local
 
-node_modules
-.env
-dist
-.wwebjs_auth
-.wwebjs_cache
-backend/.wwebjs_auth
-backend/.wwebjs_cache
-backend/node_modules
+# Frontend
 frontend/node_modules
+frontend/dist
+
+# Laravel Backend
+backend1/vendor
+backend1/node_modules
+backend1/.env
+backend1/storage/*.key
+backend1/storage/logs/*
+!backend1/storage/logs/.gitkeep
+backend1/bootstrap/cache/*
+!backend1/bootstrap/cache/.gitkeep
+backend1/public/hot
+backend1/public/storage
+
+.env
+
+backend1/backup_security_audit/

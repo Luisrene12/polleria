@@ -1,0 +1,21 @@
+# Dependencias (se instalan dentro del contenedor)
+node_modules/
+
+# Build anterior (se genera dentro del contenedor)
+dist/
+
+# Entorno local
+.env
+.env.local
+.env.*.local
+
+# Git
+.git/
+.gitignore
+
+# Docker files (solo el Dockerfile; la carpeta docker/ se necesita para nginx.conf)
+Dockerfile
+
+# Documentación
+README.md
+*.md

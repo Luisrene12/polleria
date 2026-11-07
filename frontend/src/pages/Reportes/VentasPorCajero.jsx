@@ -71,7 +71,7 @@ export default function VentasPorCajero() {
       
         {/* SECCIÓN DE TOTALES GLOBALES */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="bg-slate-900/60 backdrop-blur-md p-8 rounded-[40px] shadow-lg border border-slate-700/50 relative overflow-hidden group hover:border-orange-500/30 transition-all">
+            <div className="bg-zinc-900/80 backdrop-blur-md p-8 rounded-[40px] shadow-lg border border-zinc-800 relative overflow-hidden group hover:border-violet-500/30 transition-all">
               <div className="absolute top-0 right-0 p-4 opacity-10 text-4xl text-white group-hover:scale-110 transition-transform">💰</div>
               <p className="text-slate-400 font-black text-[10px] uppercase tracking-[0.2em] mb-2">Gran Total Recaudado</p>
               <h2 className="text-4xl font-[950] text-white tracking-tighter">Bs. {totalesGlobales.total.toFixed(2)}</h2>
@@ -96,7 +96,7 @@ export default function VentasPorCajero() {
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-amber-500 via-orange-500 to-red-600 p-8 rounded-[40px] shadow-lg shadow-orange-500/20 relative overflow-hidden">
+            <div className="bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-600 p-8 rounded-[40px] shadow-lg shadow-violet-600/20 relative overflow-hidden">
               <p className="text-orange-100 font-black text-[10px] uppercase tracking-[0.2em] mb-2">Estado del Sistema</p>
               <h2 className="text-4xl font-[950] text-white tracking-tighter">ACTIVO</h2>
               <p className="text-[10px] text-orange-200 mt-2 font-bold uppercase tracking-widest">Sincronización en Tiempo Real</p>
@@ -105,46 +105,46 @@ export default function VentasPorCajero() {
 
         {/* Filtros */}
         <div className="flex flex-col lg:flex-row justify-between items-center gap-6">
-          <div className="flex bg-slate-800/60 p-2 rounded-[25px] border border-slate-700/50">
-            <button onClick={() => handleFiltro('hoy')} className={`px-8 py-3 rounded-[20px] font-bold text-sm transition-all ${filtroActivo === 'hoy' ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-red-600 text-white shadow-lg shadow-orange-500/30' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>Hoy</button>
-            <button onClick={() => handleFiltro('semana')} className={`px-8 py-3 rounded-[20px] font-bold text-sm transition-all ${filtroActivo === 'semana' ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-red-600 text-white shadow-lg shadow-orange-500/30' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>Semana</button>
-            <button onClick={() => handleFiltro('mes')} className={`px-8 py-3 rounded-[20px] font-bold text-sm transition-all ${filtroActivo === 'mes' ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-red-600 text-white shadow-lg shadow-orange-500/30' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>Mes</button>
+          <div className="flex bg-slate-800/60 p-2 rounded-[25px] border border-zinc-800">
+            <button onClick={() => handleFiltro('hoy')} className={`px-8 py-3 rounded-[20px] font-bold text-sm transition-all ${filtroActivo === 'hoy' ? 'bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 text-white shadow-lg shadow-violet-600/30' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>Hoy</button>
+            <button onClick={() => handleFiltro('semana')} className={`px-8 py-3 rounded-[20px] font-bold text-sm transition-all ${filtroActivo === 'semana' ? 'bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 text-white shadow-lg shadow-violet-600/30' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>Semana</button>
+            <button onClick={() => handleFiltro('mes')} className={`px-8 py-3 rounded-[20px] font-bold text-sm transition-all ${filtroActivo === 'mes' ? 'bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 text-white shadow-lg shadow-violet-600/30' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>Mes</button>
           </div>
 
-          <form onSubmit={handleFiltroPersonalizado} className="bg-slate-900/60 backdrop-blur-md p-4 rounded-[30px] border border-slate-700/50 flex items-end gap-4">
+          <form onSubmit={handleFiltroPersonalizado} className="bg-zinc-900/80 backdrop-blur-md p-4 rounded-[30px] border border-zinc-800 flex items-end gap-4">
             <div className="flex flex-col gap-1">
               <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-2">Rango Inicial</span>
-              <input type="date" value={fechaInicioCust} onChange={e => setFechaInicioCust(e.target.value)} className="bg-slate-800/80 border border-slate-700/50 px-4 py-2 rounded-2xl text-xs font-bold text-slate-300 outline-none focus:ring-2 focus:ring-orange-500/30 transition-all" />
+              <input type="date" value={fechaInicioCust} onChange={e => setFechaInicioCust(e.target.value)} className="bg-zinc-950/80 border border-zinc-800 px-4 py-2 rounded-2xl text-xs font-bold text-slate-300 outline-none focus:ring-2 focus:ring-orange-500/30 transition-all" />
             </div>
             <div className="flex flex-col gap-1">
               <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-2">Rango Final</span>
-              <input type="date" value={fechaFinCust} onChange={e => setFechaFinCust(e.target.value)} className="bg-slate-800/80 border border-slate-700/50 px-4 py-2 rounded-2xl text-xs font-bold text-slate-300 outline-none focus:ring-2 focus:ring-orange-500/30 transition-all" />
+              <input type="date" value={fechaFinCust} onChange={e => setFechaFinCust(e.target.value)} className="bg-zinc-950/80 border border-zinc-800 px-4 py-2 rounded-2xl text-xs font-bold text-slate-300 outline-none focus:ring-2 focus:ring-orange-500/30 transition-all" />
             </div>
-            <button type="submit" className="bg-gradient-to-r from-amber-500 to-orange-600 text-white px-8 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:shadow-lg hover:shadow-orange-500/30 transition-all">Filtrar</button>
+            <button type="submit" className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white px-8 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:shadow-lg hover:shadow-violet-600/30 transition-all">Filtrar</button>
           </form>
         </div>
 
         {/* Listado de Cajeros */}
         <div className="space-y-12">
           {datos.map((item) => (
-            <div key={item.cajero_id} className="bg-slate-900/60 backdrop-blur-md rounded-[50px] shadow-2xl border border-slate-700/50 overflow-hidden">
+            <div key={item.cajero_id} className="bg-zinc-900/80 backdrop-blur-md rounded-[50px] shadow-2xl border border-zinc-800 overflow-hidden">
               
               {/* Cabecera Identidad */}
-              <div className="p-10 flex flex-col md:flex-row justify-between items-center gap-8 border-b border-slate-700/50">
+              <div className="p-10 flex flex-col md:flex-row justify-between items-center gap-8 border-b border-zinc-800">
                 <div className="flex items-center gap-6">
-                  <div className="w-16 h-16 rounded-2xl bg-slate-800/80 flex items-center justify-center text-3xl border border-slate-700/50">👤</div>
+                  <div className="w-16 h-16 rounded-2xl bg-zinc-950/80 flex items-center justify-center text-3xl border border-zinc-800">👤</div>
                   <div>
                     <h4 className="font-black text-white text-2xl tracking-tight">{item.cajero}</h4>
-                    <p className="text-[11px] font-black text-orange-400 uppercase tracking-[0.2em] mt-1">Personal de Ventas</p>
+                    <p className="text-[11px] font-black text-amber-400 uppercase tracking-[0.2em] mt-1">Personal de Ventas</p>
                   </div>
                 </div>
-                <div className="bg-slate-800/80 px-6 py-2 rounded-full border border-slate-700/50">
+                <div className="bg-zinc-950/80 px-6 py-2 rounded-full border border-zinc-800">
                   <span className="font-black text-slate-400 text-xs uppercase tracking-widest">{item.total_ventas} ventas</span>
                 </div>
                 <div className="text-right">
                    <h2 className="text-4xl font-[900] text-white tracking-tighter">Bs. {Number(item.monto_total).toFixed(2)}</h2>
                    <div className="flex items-center justify-end gap-2 mt-2">
-                      <span className="h-1 w-24 bg-gradient-to-r from-amber-500 to-orange-600 rounded-full"></span>
+                      <span className="h-1 w-24 bg-gradient-to-r from-violet-600 to-indigo-600 rounded-full"></span>
                       <span className="text-[10px] font-black text-emerald-400 uppercase bg-emerald-500/20 px-3 py-1 rounded-lg border border-emerald-500/30">Total Neto</span>
                    </div>
                 </div>
@@ -159,17 +159,17 @@ export default function VentasPorCajero() {
                     <h4 className="text-[11px] font-black text-emerald-400 uppercase tracking-[0.3em] italic">Desglose por Métodos</h4>
                   </div>
                   <div className="flex gap-4 mb-6">
-                      <div className="bg-slate-800/60 px-4 py-2 rounded-2xl flex items-center gap-3 border border-slate-700/50">
+                      <div className="bg-slate-800/60 px-4 py-2 rounded-2xl flex items-center gap-3 border border-zinc-800">
                           <span className="text-lg">💵</span>
                           <span className="text-[10px] font-black text-slate-400 uppercase">{item.cant_efectivo} Personas</span>
                       </div>
-                      <div className="bg-slate-800/60 px-4 py-2 rounded-2xl flex items-center gap-3 border border-slate-700/50">
+                      <div className="bg-slate-800/60 px-4 py-2 rounded-2xl flex items-center gap-3 border border-zinc-800">
                           <span className="text-lg">📱</span>
                           <span className="text-[10px] font-black text-slate-400 uppercase">{item.cant_qr} Personas</span>
                       </div>
-                      <div className="bg-orange-500/10 px-4 py-2 rounded-2xl flex items-center gap-3 border border-orange-500/20">
+                      <div className="bg-violet-600/10 px-4 py-2 rounded-2xl flex items-center gap-3 border border-violet-500/20">
                           <span className="text-lg">🌓</span>
-                          <span className="text-[10px] font-black text-orange-400 uppercase">{item.cant_mixto} Mixtos</span>
+                          <span className="text-[10px] font-black text-amber-400 uppercase">{item.cant_mixto} Mixtos</span>
                       </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl">
@@ -187,13 +187,13 @@ export default function VentasPorCajero() {
                 {/* Mix Productos */}
                 <div>
                   <div className="flex items-center gap-4 mb-6">
-                    <div className="h-[2px] w-10 bg-orange-500"></div>
-                    <h4 className="text-[11px] font-black text-orange-400 uppercase tracking-[0.3em] italic">Mix de Productos Vendidos</h4>
+                    <div className="h-[2px] w-10 bg-violet-600"></div>
+                    <h4 className="text-[11px] font-black text-amber-400 uppercase tracking-[0.3em] italic">Mix de Productos Vendidos</h4>
                   </div>
-                  <div className="bg-slate-800/40 rounded-3xl border border-slate-700/50 overflow-hidden">
+                  <div className="bg-slate-800/40 rounded-3xl border border-zinc-800 overflow-hidden">
                     <table className="w-full text-left">
                       <thead>
-                        <tr className="border-b border-slate-700/50 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                        <tr className="border-b border-zinc-800 text-[10px] font-black text-slate-500 uppercase tracking-widest">
                           <th className="px-8 py-4">Producto</th>
                           <th className="px-8 py-4 text-center">Cantidad</th>
                           <th className="px-8 py-4 text-right">Subtotal</th>
@@ -203,12 +203,12 @@ export default function VentasPorCajero() {
                         {item.detalles?.map((det, i) => (
                           <tr key={i} className="hover:bg-slate-700/30 transition-colors group">
                             <td className="px-8 py-4">
-                              <span className="font-bold text-slate-300 text-sm uppercase tracking-tight group-hover:text-orange-400 transition-colors">
+                              <span className="font-bold text-slate-300 text-sm uppercase tracking-tight group-hover:text-amber-400 transition-colors">
                                 {det.producto?.split('/')[0]}
                               </span>
                             </td>
                             <td className="px-8 py-4 text-center">
-                              <span className="bg-slate-800/80 border border-slate-700/50 px-3 py-1 rounded-lg text-xs font-black text-slate-400">
+                              <span className="bg-zinc-950/80 border border-zinc-800 px-3 py-1 rounded-lg text-xs font-black text-slate-400">
                                 {det.cantidad_vendida} <span className="text-[10px] text-slate-600">uni</span>
                               </span>
                             </td>

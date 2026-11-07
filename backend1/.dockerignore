@@ -1,0 +1,33 @@
+# Dependencias (se instalan dentro del contenedor)
+vendor/
+node_modules/
+
+# Archivos de desarrollo
+.env
+.env.local
+.env.*.local
+
+# Git
+.git/
+.gitignore
+
+# Logs
+*.log
+storage/logs/
+
+# Caché local
+bootstrap/cache/*.php
+storage/framework/cache/
+storage/framework/sessions/
+storage/framework/views/
+
+# Testing
+tests/
+phpunit.xml
+
+# Docker files (solo el Dockerfile; la carpeta docker/ se necesita dentro del contenedor)
+Dockerfile
+
+# Documentación
+README.md
+*.md

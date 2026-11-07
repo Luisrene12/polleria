@@ -18,8 +18,7 @@ export default function ProtectedRoute({ allowedRoles }) {
   }
 
   if (allowedRoles && !allowedRoles.includes(user.rol)) {
-    // Si el usuario no tiene permiso, lo redirigimos a la página de ventas
-    return <Navigate to="/ventas/nueva" />;
+    return <Navigate to={user.rol === 'super_admin' ? '/super-admin' : '/ventas/nueva'} />;
   }
 
   return <Outlet />;

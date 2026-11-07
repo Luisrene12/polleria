@@ -1,8 +1,8 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:3001/api',
-  timeout: 10000, // 10 s (reducido de 15 s)
+  baseURL: import.meta.env.VITE_API_URL || '/api',
+  timeout: 10000,
 });
 
 // ─── INTERCEPTOR DE PETICIONES ────────────────────────────────────────────────
@@ -25,8 +25,11 @@ api.interceptors.response.use(
   async (error) => {
     const config = error.config || {};
 
+    // No redirigir si el error proviene del intento de login
+    const isLoginRequest = config.url && config.url.includes('/auth/login');
+
     // Redirigir si sesión expirada
-    if (error.response?.status === 401 || error.response?.status === 403) {
+    if ((error.response?.status === 401 || error.response?.status === 403) && !isLoginRequest) {
       localStorage.removeItem('token');
       if (!window.location.pathname.includes('/login')) {
         window.location.href = '/login';

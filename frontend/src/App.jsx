@@ -1,22 +1,33 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
-import { AuthProvider }    from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { CarritoProvider } from './context/CarritoContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout         from './components/Layout';
 
 // Lazy loading — cada página se carga solo cuando el usuario la visita
-const Login           = lazy(() => import('./pages/Login'));
-const NuevaVenta      = lazy(() => import('./pages/Ventas/NuevaVenta'));
-const ProductosAdmin  = lazy(() => import('./pages/Productos/ProductosAdmin'));
-const VentasPorCajero = lazy(() => import('./pages/Reportes/VentasPorCajero'));
-const VentasPorProducto = lazy(() => import('./pages/Reportes/VentasPorProducto'));
-const VentasGenerales = lazy(() => import('./pages/Reportes/VentasGenerales'));
-const UsuariosAdmin   = lazy(() => import('./pages/UsuariosAdmin'));
-const CategoriasAdmin = lazy(() => import('./pages/CategoriasAdmin'));
-const Dashboard       = lazy(() => import('./pages/Reportes/Dashboard'));
-const WhatsAppConfig  = lazy(() => import('./pages/Configuracion/WhatsAppConfig'));
+const Login               = lazy(() => import('./pages/Login'));
+const NuevaVenta          = lazy(() => import('./pages/Ventas/NuevaVenta'));
+const ProductosAdmin      = lazy(() => import('./pages/Productos/ProductosAdmin'));
+const VentasPorCajero     = lazy(() => import('./pages/Reportes/VentasPorCajero'));
+const VentasPorProducto   = lazy(() => import('./pages/Reportes/VentasPorProducto'));
+const VentasGenerales     = lazy(() => import('./pages/Reportes/VentasGenerales'));
+const UsuariosAdmin       = lazy(() => import('./pages/UsuariosAdmin'));
+const CategoriasAdmin     = lazy(() => import('./pages/CategoriasAdmin'));
+const Dashboard           = lazy(() => import('./pages/Reportes/Dashboard'));
+const WhatsAppConfig      = lazy(() => import('./pages/Configuracion/WhatsAppConfig'));
+const FacturacionRestaurante = lazy(() => import('./pages/Configuracion/FacturacionRestaurante'));
+const SuperAdminDashboard = lazy(() => import('./pages/SuperAdmin/SuperAdminDashboard'));
+
+// Redirección inicial inteligente según el rol del usuario
+const HomeRedirect = () => {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" />;
+  if (user.rol === 'super_admin') return <Navigate to="/super-admin" />;
+  return <Navigate to="/ventas/nueva" />;
+};
 
 // Spinner de carga mientras se descarga el chunk de la página
 const PageLoader = () => (
@@ -44,16 +55,23 @@ function App() {
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/login" element={<Login />} />
-              <Route path="/"     element={<Navigate to="/ventas/nueva" />} />
+              <Route path="/"     element={<HomeRedirect />} />
 
+              {/* Panel Super Admin (SaaS Maestro con Layout Propio) */}
+              <Route element={<ProtectedRoute allowedRoles={['super_admin']} />}>
+                <Route path="/super-admin" element={<SuperAdminDashboard />} />
+              </Route>
+
+              {/* Módulos POS del Restaurante (Layout POS con Navbar) */}
               <Route element={<Layout />}>
-                {/* Ventas — todos los autenticados */}
-                <Route element={<ProtectedRoute />}>
+
+                {/* Ventas — cajeros, administradores y superadministrador */}
+                <Route element={<ProtectedRoute allowedRoles={['super_admin', 'admin', 'seller']} />}>
                   <Route path="/ventas/nueva" element={<NuevaVenta />} />
                 </Route>
 
-                {/* Gestión — todos los autenticados */}
-                <Route element={<ProtectedRoute />}>
+                {/* Gestión del negocio */}
+                <Route element={<ProtectedRoute allowedRoles={['super_admin', 'admin', 'seller']} />}>
                   <Route path="/productos"          element={<ProductosAdmin />} />
                   <Route path="/categorias"         element={<CategoriasAdmin />} />
                   <Route path="/whatsapp"           element={<WhatsAppConfig />} />
@@ -61,15 +79,16 @@ function App() {
                   <Route path="/reportes/ventas"    element={<VentasGenerales />} />
                 </Route>
 
-                {/* Admin exclusivo */}
-                <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
+                {/* Administración — exclusivo administradores y superadministrador */}
+                <Route element={<ProtectedRoute allowedRoles={['super_admin', 'admin']} />}>
                   <Route path="/usuarios"            element={<UsuariosAdmin />} />
+                  <Route path="/facturacion"         element={<FacturacionRestaurante />} />
                   <Route path="/reportes/productos"  element={<VentasPorProducto />} />
                   <Route path="/reportes/cajeros"    element={<VentasPorCajero />} />
                 </Route>
               </Route>
 
-              <Route path="*" element={<Navigate to="/" />} />
+              <Route path="*" element={<HomeRedirect />} />
             </Routes>
           </Suspense>
         </BrowserRouter>

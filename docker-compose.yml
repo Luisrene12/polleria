@@ -1,0 +1,152 @@
+
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║          POLLERÍA - Docker Compose Completo                     ║
+# ║   MySQL · phpMyAdmin · Laravel Backend · React Frontend         ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
+services:
+
+  # ─────────────────────────────────────────────────────────────────
+  # 🗄️  BASE DE DATOS - MySQL 8
+  # ─────────────────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: polleria_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-polleria_root_2024}
+      MYSQL_DATABASE: ${DB_DATABASE:-polleria}
+      MYSQL_USER: ${DB_USERNAME:-polleria_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-polleria_pass_2024}
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - polleria_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD:-polleria_root_2024}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ─────────────────────────────────────────────────────────────────
+  # 🔵  phpMyAdmin - Administrador visual de BD
+  # ─────────────────────────────────────────────────────────────────
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: polleria_phpmyadmin
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: root
+      PMA_PASSWORD: ${DB_ROOT_PASSWORD:-polleria_root_2024}
+      UPLOAD_LIMIT: 50M
+      MEMORY_LIMIT: 256M
+      MAX_EXECUTION_TIME: 300
+    ports:
+      - "8080:80"
+    networks:
+      - polleria_network
+
+  # ─────────────────────────────────────────────────────────────────
+  # 🟢  BACKEND - Laravel (PHP 8.2 + Nginx + Queue Worker)
+  # ─────────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend1
+      dockerfile: Dockerfile
+    container_name: polleria_backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      APP_NAME: "Pollería"
+      APP_ENV: production
+      APP_KEY: ${APP_KEY:-}
+      APP_DEBUG: "false"
+      APP_URL: http://localhost:3001
+      APP_TIMEZONE: America/La_Paz
+
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: ${DB_DATABASE:-polleria}
+      DB_USERNAME: ${DB_USERNAME:-polleria_user}
+      DB_PASSWORD: ${DB_PASSWORD:-polleria_pass_2024}
+      DB_COLLATION: utf8mb4_unicode_ci
+
+      SESSION_DRIVER: database
+      QUEUE_CONNECTION: database
+      CACHE_STORE: database
+
+      LOG_CHANNEL: stack
+      LOG_LEVEL: info
+
+      RUN_SEEDERS: ${RUN_SEEDERS:-false}
+
+      SANCTUM_STATEFUL_DOMAINS: "localhost,localhost:5173,localhost:3000,frontend"
+    ports:
+      - "3001:80"
+    volumes:
+      - ./backend1:/var/www/html
+      - /var/www/html/vendor
+      - backend_storage:/var/www/html/storage
+      - backend_logs:/var/log
+    networks:
+      - polleria_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ─────────────────────────────────────────────────────────────────
+  # 🟣  FRONTEND - React (Vite Build + Nginx)
+  # ─────────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
+    container_name: polleria_frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+    networks:
+      - polleria_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+# ─────────────────────────────────────────────────────────────────
+# 📦  VOLÚMENES PERSISTENTES
+# ─────────────────────────────────────────────────────────────────
+volumes:
+  mysql_data:
+    driver: local
+  backend_storage:
+    driver: local
+  backend_logs:
+    driver: local
+
+# ─────────────────────────────────────────────────────────────────
+# 🌐  RED INTERNA
+# ─────────────────────────────────────────────────────────────────
+networks:
+  polleria_network:
+    driver: bridge

@@ -71,21 +71,21 @@ export default function WhatsAppConfig() {
             </div>
             <div>
               <h1 className="text-2xl font-black text-white tracking-tight uppercase">Configuración de WhatsApp</h1>
-              <p className="text-orange-400 font-bold text-[10px] uppercase tracking-widest mt-1">Conecta tu cuenta para reportes</p>
+              <p className="text-amber-400 font-bold text-[10px] uppercase tracking-widest mt-1">Conecta tu cuenta para reportes</p>
             </div>
           </div>
           
           <button 
             onClick={handleReset}
             disabled={isResetting}
-            className="bg-slate-800/80 hover:bg-slate-700 text-slate-300 px-6 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest transition-all border border-slate-700/50 shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
+            className="bg-zinc-950/80 hover:bg-slate-700 text-slate-300 px-6 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest transition-all border border-zinc-800 shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {isResetting ? '🔄 Reiniciando...' : '🔄 Actualizar WhatsApp'}
           </button>
         </div>
 
         {/* Main Status Card */}
-        <div className="bg-slate-900/60 backdrop-blur-md p-8 rounded-[40px] shadow-lg border border-slate-700/50 text-center space-y-8">
+        <div className="bg-zinc-900/80 backdrop-blur-md p-8 rounded-[40px] shadow-lg border border-zinc-800 text-center space-y-8">
           {status.ready ? (
             <div className="space-y-6">
               <div className="inline-flex items-center justify-center w-20 h-20 bg-emerald-500/20 rounded-full text-4xl animate-bounce border border-emerald-500/30">
@@ -140,7 +140,7 @@ export default function WhatsAppConfig() {
                     />
                   </div>
                 ) : (
-                  <div className="w-64 h-64 bg-slate-800/80 rounded-[40px] flex flex-col items-center justify-center border-2 border-dashed border-slate-600">
+                  <div className="w-64 h-64 bg-zinc-950/80 rounded-[40px] flex flex-col items-center justify-center border-2 border-dashed border-slate-600">
                     <span className="text-4xl mb-4 animate-spin text-emerald-400">⌛</span>
                     <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest text-center px-8">
                       {isResetting ? 'Reiniciando el motor de WhatsApp...' : 'Esperando respuesta del servidor...'}
@@ -153,10 +153,10 @@ export default function WhatsAppConfig() {
               </div>
 
               {/* Status info */}
-              <div className="bg-slate-800/60 p-6 rounded-3xl border border-slate-700/50 flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="bg-slate-800/60 p-6 rounded-3xl border border-zinc-800 flex flex-col md:flex-row items-center justify-between gap-4">
                 <div className="text-left">
                   <p className="text-slate-300 text-sm font-bold uppercase tracking-wider">
-                    Estado: <span className="text-orange-400">{status.state || 'INICIANDO'}</span>
+                    Estado: <span className="text-amber-400">{status.state || 'INICIANDO'}</span>
                   </p>
                   <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-0.5">El QR se actualiza en tiempo real</p>
                 </div>
@@ -164,7 +164,7 @@ export default function WhatsAppConfig() {
                   <div className="flex gap-2">
                     <button 
                       onClick={handleReset}
-                      className="bg-gradient-to-r from-amber-500 to-orange-600 text-white px-5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:shadow-lg hover:shadow-orange-500/30 transition-all"
+                      className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white px-5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:shadow-lg hover:shadow-violet-600/30 transition-all"
                     >
                       Reintentar
                     </button>
@@ -183,7 +183,7 @@ export default function WhatsAppConfig() {
         </div>
 
         {/* Instructions */}
-        <div className="bg-slate-900/60 backdrop-blur-md p-8 rounded-[40px] border border-slate-700/50 space-y-4 shadow-lg">
+        <div className="bg-zinc-900/80 backdrop-blur-md p-8 rounded-[40px] border border-zinc-800 space-y-4 shadow-lg">
           <h3 className="font-black text-lg text-white flex items-center gap-2">
             <span className="text-emerald-400 text-xl">💡</span> Instrucciones
           </h3>
