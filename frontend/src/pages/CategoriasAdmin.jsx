@@ -99,50 +99,50 @@ export default function CategoriasAdmin() {
   );
 
   return (
-    <div className="h-[calc(100vh-80px)] p-3 sm:p-6 max-w-6xl mx-auto flex flex-col justify-center overflow-hidden select-none bg-transparent relative z-10">
+    <div className="min-h-[calc(100vh-80px)] p-4 sm:p-8 max-w-7xl 2xl:max-w-[1550px] mx-auto flex flex-col justify-center select-none bg-transparent relative z-10">
       
       {/* TARJETA CONTENEDOR PRINCIPAL IDÉNTICA A LA IMAGEN */}
-      <div className="bg-[#101319]/90 backdrop-blur-xl border border-[#212634] rounded-[28px] sm:rounded-[32px] p-5 sm:p-7 shadow-2xl flex flex-col gap-4 relative overflow-hidden">
+      <div className="bg-[#101319]/90 backdrop-blur-xl border border-[#212634] rounded-[32px] sm:rounded-[38px] p-6 sm:p-9 shadow-2xl flex flex-col gap-6 relative overflow-hidden">
         
         {/* 1. HEADER INTERNO */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-1">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2 border-b border-[#212634]/60">
           
           {/* Lado izquierdo: Icono de Carpeta Dorado + Título + Badge + Subtítulo */}
-          <div className="flex items-center gap-3.5">
-            {/* Icono de Carpeta con Resplandor */}
-            <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-amber-400 to-orange-500 p-[2px] shadow-lg shadow-amber-500/30 shrink-0">
-              <div className="w-full h-full rounded-full bg-[#121620] flex items-center justify-center text-xl">
+          <div className="flex items-center gap-4 sm:gap-5">
+            {/* Icono de Carpeta con Resplandor Más Grande */}
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-tr from-amber-400 to-orange-500 p-[2.5px] shadow-xl shadow-amber-500/30 shrink-0">
+              <div className="w-full h-full rounded-full bg-[#121620] flex items-center justify-center text-2xl sm:text-3xl">
                 📁
               </div>
             </div>
 
             <div>
-              <div className="flex items-center gap-2.5">
-                <h1 className="text-xl sm:text-2xl font-[950] text-white tracking-wider uppercase leading-none">
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-[950] text-white tracking-wider uppercase leading-none">
                   CATEGORÍAS
                 </h1>
-                <span className="bg-gradient-to-r from-amber-600 via-orange-600 to-amber-600 text-white font-[950] text-[10px] sm:text-xs uppercase px-3 py-1 rounded-full shadow-md shadow-orange-600/30">
+                <span className="bg-gradient-to-r from-amber-600 via-orange-600 to-amber-600 text-white font-[950] text-xs sm:text-sm uppercase px-3.5 py-1.5 rounded-full shadow-md shadow-orange-600/30">
                   {categorias.length} SECCIONES
                 </span>
               </div>
-              <p className="text-zinc-400 text-xs font-semibold mt-1">
+              <p className="text-zinc-400 text-xs sm:text-sm font-semibold mt-1.5">
                 Catálogo Oficial del Restaurante - Estilo Píldora Delgado
               </p>
             </div>
           </div>
 
-          {/* Lado derecho: Botón + NUEVA CATEGORÍA */}
+          {/* Lado derecho: Botón + NUEVA CATEGORÍA Más Grande */}
           <button 
             onClick={() => openModal()}
-            className="px-6 py-2.5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:brightness-110 text-white rounded-full font-[950] text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-orange-500/40 transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
+            className="px-7 py-3 sm:px-8 sm:py-3.5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:brightness-110 text-white rounded-full font-[950] text-xs sm:text-sm uppercase tracking-wider shadow-xl shadow-orange-500/40 transition-all flex items-center gap-2 cursor-pointer active:scale-95 shrink-0"
           >
-            <span className="text-base leading-none">＋</span> 
+            <span className="text-lg leading-none">＋</span> 
             <span>NUEVA CATEGORÍA</span>
           </button>
         </div>
 
         {/* 2. LISTA DE FILAS PÍLDORA CON RESPLANDOR NARANJA LATERAL */}
-        <div className="space-y-3 overflow-y-auto max-h-[calc(100vh-250px)] pr-1 no-scrollbar">
+        <div className="space-y-3.5 sm:space-y-4 overflow-y-auto max-h-[calc(100vh-270px)] pr-1 no-scrollbar">
           {categorias.map((c, index) => {
             const icon = getCategoryIcon(c.nombre);
             const desc = getDefaultDesc(c.nombre, c.descripcion);
@@ -150,23 +150,23 @@ export default function CategoriasAdmin() {
             return (
               <div 
                 key={c.id}
-                className="group relative overflow-hidden rounded-full bg-[#12151c] hover:bg-[#161a23] border border-[#232938] border-l-4 border-l-amber-500 px-3 py-2 sm:px-4 sm:py-2.5 flex items-center justify-between gap-4 transition-all duration-300 shadow-[-6px_0_18px_rgba(245,158,11,0.35)] hover:shadow-[-8px_0_24px_rgba(245,158,11,0.55)]"
+                className="group relative overflow-hidden rounded-full bg-[#12151c] hover:bg-[#161a23] border border-[#232938] border-l-4 sm:border-l-[6px] border-l-amber-500 px-4 py-2.5 sm:px-6 sm:py-3.5 flex items-center justify-between gap-4 transition-all duration-300 shadow-[-8px_0_22px_rgba(245,158,11,0.38)] hover:shadow-[-10px_0_28px_rgba(245,158,11,0.6)]"
                 style={{ animationDelay: `${index * 40}ms` }}
               >
                 {/* Degradado luminoso suave en el borde izquierdo */}
-                <div className="absolute left-0 top-0 bottom-0 w-28 bg-gradient-to-r from-amber-500/25 via-orange-500/10 to-transparent pointer-events-none rounded-l-full"></div>
+                <div className="absolute left-0 top-0 bottom-0 w-36 bg-gradient-to-r from-amber-500/25 via-orange-500/10 to-transparent pointer-events-none rounded-l-full"></div>
 
                 {/* Contenido Izquierdo: Círculo con Icono + Nombre + Descripción en una línea */}
-                <div className="flex items-center gap-3.5 sm:gap-5 min-w-0 flex-1 relative z-10">
+                <div className="flex items-center gap-4 sm:gap-6 min-w-0 flex-1 relative z-10">
                   
-                  {/* Círculo Oscuro con Icono */}
-                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#161b24] border border-[#2b3345] flex items-center justify-center text-2xl shadow-inner shrink-0 group-hover:scale-105 transition-transform duration-200">
+                  {/* Círculo Oscuro con Icono Más Grande */}
+                  <div className="w-13 h-13 sm:w-16 sm:h-16 rounded-full bg-[#161b24] border border-[#2b3345] flex items-center justify-center text-2xl sm:text-3xl shadow-inner shrink-0 group-hover:scale-105 transition-transform duration-200">
                     {icon}
                   </div>
 
                   {/* Nombre y Descripción */}
-                  <div className="min-w-0 flex-1 flex flex-col sm:flex-row sm:items-center sm:gap-4">
-                    <h3 className="text-base sm:text-lg font-[950] text-white tracking-tight leading-none group-hover:text-amber-300 transition-colors shrink-0">
+                  <div className="min-w-0 flex-1 flex flex-col sm:flex-row sm:items-center sm:gap-5">
+                    <h3 className="text-base sm:text-xl font-[950] text-white tracking-tight leading-none group-hover:text-amber-300 transition-colors shrink-0">
                       {c.nombre}
                     </h3>
                     <span className="text-zinc-400 text-xs sm:text-sm font-medium truncate mt-0.5 sm:mt-0">
@@ -175,13 +175,13 @@ export default function CategoriasAdmin() {
                   </div>
                 </div>
 
-                {/* Contenido Derecho: Botones Píldora EDITAR y BORRAR */}
-                <div className="flex items-center gap-2.5 shrink-0 relative z-10">
+                {/* Contenido Derecho: Botones Píldora EDITAR y BORRAR Más Grandes */}
+                <div className="flex items-center gap-2.5 sm:gap-3 shrink-0 relative z-10">
                   
                   {/* Botón EDITAR (Naranja Brillante) */}
                   <button 
                     onClick={() => openModal(c)}
-                    className="px-5 sm:px-6 py-2 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:brightness-110 text-white rounded-full text-xs font-[950] uppercase tracking-wider shadow-md shadow-orange-500/30 flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+                    className="px-6 sm:px-7 py-2.5 sm:py-3 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:brightness-110 text-white rounded-full text-xs sm:text-sm font-[950] uppercase tracking-wider shadow-md shadow-orange-500/30 flex items-center gap-2 transition-all cursor-pointer active:scale-95"
                   >
                     <span>✏️</span>
                     <span>EDITAR</span>
@@ -190,7 +190,7 @@ export default function CategoriasAdmin() {
                   {/* Botón BORRAR (Rojo Carmesí) */}
                   <button 
                     onClick={() => handleDelete(c.id, c.nombre)}
-                    className="px-5 sm:px-6 py-2 bg-gradient-to-r from-rose-700 via-red-600 to-rose-700 hover:brightness-110 text-white rounded-full text-xs font-[950] uppercase tracking-wider shadow-md shadow-red-600/30 flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+                    className="px-6 sm:px-7 py-2.5 sm:py-3 bg-gradient-to-r from-rose-700 via-red-600 to-rose-700 hover:brightness-110 text-white rounded-full text-xs sm:text-sm font-[950] uppercase tracking-wider shadow-md shadow-red-600/30 flex items-center gap-2 transition-all cursor-pointer active:scale-95"
                   >
                     <span>🗑️</span>
                     <span>BORRAR</span>
