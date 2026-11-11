@@ -17,6 +17,9 @@ use App\Http\Controllers\ImageProxyController;
 // ─── PROXY DE IMÁGENES (público, sin auth) ────────────────────────────────────
 Route::get('/img-proxy', [ImageProxyController::class, 'proxy']);
 
+// ─── DESCARGA PÚBLICA DE REPORTES PDF PARA WHATSAPP ───────────────────────────
+Route::get('/whatsapp/descargar-pdf/{filename}', [WhatsAppController::class, 'downloadPDFReport']);
+
 // ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
 Route::get('/health', function () {
     try {
@@ -171,6 +174,8 @@ Route::middleware(['auth:sanctum', 'negocio_activo'])->group(function () {
         Route::post('/reporte-diario', [WhatsAppController::class, 'sendDailyReport']);
         Route::post('/backup',         [WhatsAppController::class, 'sendBackup']);
         Route::post('/reporte-pdf',    [WhatsAppController::class, 'sendPDFReport']);
+        Route::post('/subir-pdf',      [WhatsAppController::class, 'uploadPDFReport']);
+        Route::get('/descargar-pdf/{filename}', [WhatsAppController::class, 'downloadPDFReport']);
         Route::post('/logout',         [WhatsAppController::class, 'logout']);
         Route::post('/reset',          [WhatsAppController::class, 'reset']);
         Route::post('/full-reset',     [WhatsAppController::class, 'fullReset']);

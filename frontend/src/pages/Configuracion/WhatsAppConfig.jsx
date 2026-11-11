@@ -1,14 +1,26 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getWhatsAppConfig, saveWhatsAppConfig, openWhatsAppDirect, formatWhatsAppNumber } from '../../services/whatsappService';
+import { QRCodeCanvas } from 'qrcode.react';
+import { 
+  getWhatsAppConfig, 
+  saveWhatsAppConfig, 
+  formatWhatsAppNumber, 
+  getWhatsAppDirectUrl, 
+  uploadPDFReport, 
+  shareOrOpenWhatsApp 
+} from '../../services/whatsappService';
+import { getDashboardData } from '../../services/reporteService';
+import { generarReportePDF } from '../../utils/reportePdfGenerator';
+import { useAuth } from '../../context/AuthContext';
 import { toast } from 'react-hot-toast';
 
 export default function WhatsAppConfig() {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
+  const [generandoPDF, setGenerandoPDF] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -20,12 +32,28 @@ export default function WhatsAppConfig() {
     reporte_diario: true
   });
 
-  // Cargar configuración existente
+  // Estadísticas del día para el reporte y el QR
+  const [statsHoy, setStatsHoy] = useState({
+    hoy: 0,
+    totalEfectivo: 0,
+    totalQR: 0,
+    ventasTotales: 0,
+    historial: []
+  });
+
+  // Enlace y URL del PDF subido
+  const [pdfUrl, setPdfUrl] = useState('');
+
+  // Cargar configuración existente y ventas de hoy
   useEffect(() => {
-    const fetchConfig = async () => {
+    const cargarTodo = async () => {
       setLoading(true);
       try {
-        const config = await getWhatsAppConfig();
+        const [config, dashboardData] = await Promise.all([
+          getWhatsAppConfig(),
+          getDashboardData().catch(() => null)
+        ]);
+
         if (config) {
           setFormData({
             codigo_pais: config.codigo_pais || '591',
@@ -36,14 +64,24 @@ export default function WhatsAppConfig() {
             reporte_diario: config.reporte_diario !== undefined ? Boolean(config.reporte_diario) : true
           });
         }
+
+        if (dashboardData) {
+          setStatsHoy({
+            hoy: dashboardData.hoy || 0,
+            totalEfectivo: dashboardData.totalEfectivo || 0,
+            totalQR: dashboardData.totalQR || 0,
+            ventasTotales: dashboardData.ventasTotales || dashboardData.historial?.length || 0,
+            historial: dashboardData.historial || []
+          });
+        }
       } catch (err) {
-        console.error('Error al cargar config:', err);
+        console.error('Error al inicializar datos:', err);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchConfig();
+    cargarTodo();
   }, []);
 
   const handleChange = (e) => {
@@ -62,7 +100,7 @@ export default function WhatsAppConfig() {
     }
 
     setSaving(true);
-    const toastId = toast.loading('Guardando configuración...');
+    const toastId = toast.loading('Guardando número y configuración...');
     try {
       await saveWhatsAppConfig(formData);
       toast.success('✅ Configuración de WhatsApp guardada exitosamente', { id: toastId });
@@ -74,40 +112,123 @@ export default function WhatsAppConfig() {
     }
   };
 
-  const handleTest = () => {
-    if (!formData.telefono.trim()) {
-      toast.error('Ingresa primero el número de teléfono para probar');
-      return;
+  // ─── Construir mensaje del reporte oficial ──────────────────────────────────
+  const construirMensajeReporte = (linkPdf = '') => {
+    const now = new Date();
+    const fecha = now.toLocaleDateString('es-BO');
+    const hora = now.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' });
+
+    const total = Number(statsHoy.hoy || 0).toFixed(2);
+    const ef = Number(statsHoy.totalEfectivo || 0).toFixed(2);
+    const qr = Number(statsHoy.totalQR || 0).toFixed(2);
+    const tickets = statsHoy.ventasTotales || statsHoy.historial?.length || 0;
+
+    let msg = `🍗 *POLLERÍA "EL POLLÓN" — REPORTE OFICIAL*\n`;
+    msg += `📅 *Fecha:* ${fecha} | ⏰ *Hora:* ${hora}\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `💰 *Total Ventas:*   Bs. ${total}\n`;
+    msg += `💵 *Total Efectivo:* Bs. ${ef}\n`;
+    msg += `📱 *Total QR:*       Bs. ${qr}\n`;
+    msg += `🧾 *Tickets:*        ${tickets} pedidos\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `👤 *Responsable:* ${user?.nombre || 'Administrador'}\n`;
+
+    if (linkPdf) {
+      msg += `📄 *DESCARGAR REPORTE PDF:* \n👉 ${linkPdf}\n`;
+      msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
     }
 
-    setTesting(true);
+    msg += `📎 _El reporte detallado oficial en PDF está adjunto._\n`;
+    msg += `_Sistema POS El Pollón_`;
+    return msg;
+  };
+
+  // ─── Descargar el PDF directamente (mismo formato de Reportes) ──────────────
+  const handleDescargarPDF = () => {
     try {
-      const now = new Date();
-      const hora = now.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' });
-      const fecha = now.toLocaleDateString('es-BO');
-
-      const testMsg = `🍗 *POLLERÍA EL POLLÓN — VERIFICACIÓN*\n\n` +
-                      `👋 ¡Hola ${formData.destinatario || 'Administración'}!\n` +
-                      `✅ Este número de WhatsApp está configurado correctamente para recibir los *Reportes de Ventas Diarias* y *Cierres de Caja* del Sistema POS.\n\n` +
-                      `📅 *Fecha:* ${fecha}\n` +
-                      `⏰ *Hora:* ${hora}\n\n` +
-                      `🚀 _Conexión directa activa desde Pollería El Pollón._`;
-
-      openWhatsAppDirect(formData.telefono, testMsg, formData.codigo_pais);
-      toast.success('Abriendo WhatsApp para enviar mensaje de prueba...', { icon: '📲' });
+      const doc = generarReportePDF({
+        stats: statsHoy,
+        historial: statsHoy.historial
+      });
+      const hoyStr = new Date().toISOString().split('T')[0];
+      doc.save(`Reporte_ElPollon_${hoyStr}.pdf`);
+      toast.success('✅ Reporte PDF descargado correctamente');
     } catch (err) {
-      toast.error('Error al abrir WhatsApp');
-    } finally {
-      setTimeout(() => setTesting(false), 1500);
+      console.error('Error al generar PDF:', err);
+      toast.error('Error al generar el PDF del reporte');
     }
   };
 
+  // ─── Enviar Reporte a WhatsApp con PDF adjunto y enlace ────────────────────
+  const handleEnviarReporteWhatsApp = async () => {
+    if (!formData.telefono.trim()) {
+      toast.error('Por favor ingresa un número de teléfono de WhatsApp primero');
+      return;
+    }
+
+    setGenerandoPDF(true);
+    const toastId = toast.loading('Generando PDF oficial del reporte...');
+
+    try {
+      // 1. Generar PDF oficial
+      const doc = generarReportePDF({
+        stats: statsHoy,
+        historial: statsHoy.historial
+      });
+      const hoyStr = new Date().toISOString().split('T')[0];
+      const filename = `Reporte_ElPollon_${hoyStr}.pdf`;
+
+      // 2. Obtener base64 y blob
+      const pdfBase64 = doc.output('datauristring');
+      const pdfBlob = doc.output('blob');
+
+      // 3. Descargar el archivo PDF automáticamente para tenerlo a mano
+      doc.save(filename);
+
+      // 4. Subir PDF al servidor para generar enlace permanente de descarga
+      let publicPdfUrl = pdfUrl;
+      try {
+        const uploadRes = await uploadPDFReport(pdfBase64, filename);
+        if (uploadRes && (uploadRes.download_url || uploadRes.url)) {
+          publicPdfUrl = uploadRes.download_url || uploadRes.url;
+          setPdfUrl(publicPdfUrl);
+        }
+      } catch (uploadErr) {
+        console.warn('No se pudo subir PDF temporal, continuando con mensaje:', uploadErr);
+      }
+
+      toast.dismiss(toastId);
+      toast.success('✅ PDF generado — abriendo WhatsApp...', { duration: 4000 });
+
+      // 5. Construir mensaje ejecutivo con enlace al PDF
+      const mensaje = construirMensajeReporte(publicPdfUrl);
+
+      // 6. Intentar compartir archivo PDF nativo (móvil) o abrir WhatsApp directo
+      await shareOrOpenWhatsApp({
+        phone: formData.telefono,
+        message: mensaje,
+        pdfBlob: pdfBlob,
+        filename: filename,
+        countryCode: formData.codigo_pais
+      });
+
+    } catch (err) {
+      toast.dismiss(toastId);
+      console.error('Error al procesar envío de PDF:', err);
+      toast.error('Error al preparar el reporte en PDF');
+    } finally {
+      setGenerandoPDF(false);
+    }
+  };
+
+  // Valor actual del QR (Enlace directo a WhatsApp con el reporte de hoy)
+  const mensajeQR = construirMensajeReporte(pdfUrl);
+  const qrWhatsAppUrl = getWhatsAppDirectUrl(formData.telefono, mensajeQR, formData.codigo_pais);
   const cleanPhone = formatWhatsAppNumber(formData.telefono, formData.codigo_pais);
-  const isConfigured = Boolean(formData.telefono && formData.telefono.trim().length >= 7);
 
   return (
     <div className="bg-transparent min-h-screen p-4 md:p-8 relative z-10 text-white">
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="max-w-5xl mx-auto space-y-6">
 
         {/* ─── Encabezado ────────────────────────────────────────────── */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-zinc-800">
@@ -117,10 +238,10 @@ export default function WhatsAppConfig() {
             </div>
             <div>
               <h1 className="text-2xl font-black text-white tracking-tight uppercase">
-                Configuración de WhatsApp
+                WhatsApp — Reportes en PDF y QR
               </h1>
               <p className="text-xs font-semibold text-emerald-400 tracking-wider uppercase mt-0.5">
-                Envío directo de reportes de ventas y balances al dueño
+                Configura el número y escanea el QR para enviar el reporte de ventas
               </p>
             </div>
           </div>
@@ -130,82 +251,54 @@ export default function WhatsAppConfig() {
               onClick={() => navigate('/reportes')}
               className="px-4 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-bold text-xs uppercase tracking-wider border border-zinc-700/60 transition-all flex items-center gap-2"
             >
-              📊 Ir a Reportes
+              📊 Ver Reportes
             </button>
 
             <button
               onClick={handleSave}
               disabled={saving || loading}
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-black text-xs uppercase tracking-widest shadow-lg shadow-emerald-600/25 transition-all flex items-center gap-2 disabled:opacity-50"
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-black text-xs uppercase tracking-widest shadow-lg shadow-emerald-600/25 transition-all flex items-center gap-2 disabled:opacity-50"
             >
-              {saving ? '💾 Guardando...' : '💾 Guardar Cambios'}
+              {saving ? '💾 Guardando...' : '💾 Guardar Número'}
             </button>
           </div>
         </div>
 
-        {/* ─── Banner de Estado de Conexión ─────────────────────────── */}
-        <div className={`p-5 rounded-3xl border backdrop-blur-md transition-all ${
-          isConfigured 
-            ? 'bg-emerald-950/20 border-emerald-500/30 shadow-lg shadow-emerald-950/30' 
-            : 'bg-amber-950/20 border-amber-500/30'
-        }`}>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-start sm:items-center gap-3.5">
-              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-xl shrink-0 ${
-                isConfigured ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
-              }`}>
-                {isConfigured ? '🟢' : '🟡'}
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-black text-sm uppercase tracking-wider text-white">
-                    {isConfigured ? 'Listo para Envío Directo' : 'Configuración Pendiente'}
-                  </h3>
-                  <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
-                    isConfigured ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                  }`}>
-                    {isConfigured ? 'Activo' : 'Incompleto'}
-                  </span>
-                </div>
-                <p className="text-xs text-zinc-400 mt-1">
-                  {isConfigured ? (
-                    <>
-                      Los reportes del menú <strong className="text-zinc-200">"Reportes"</strong> se abrirán directamente en el chat de WhatsApp de <span className="text-emerald-400 font-mono font-bold">+{cleanPhone}</span> ({formData.destinatario}).
-                    </>
-                  ) : (
-                    'Ingresa tu número de WhatsApp abajo para habilitar el envío del reporte con un solo clic.'
-                  )}
-                </p>
-              </div>
-            </div>
-
-            {isConfigured && (
-              <button
-                onClick={handleTest}
-                disabled={testing}
-                className="px-4 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-xs uppercase tracking-wider border border-emerald-500/40 transition-all flex items-center justify-center gap-2 shrink-0"
-              >
-                {testing ? '⏳ Abriendo...' : '📲 Probar Chat Directo'}
-              </button>
-            )}
+        {/* ─── Resumen de Caja de Hoy ───────────────────────────────── */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-zinc-900/60 backdrop-blur-md p-4 rounded-3xl border border-zinc-800">
+          <div className="bg-zinc-950/80 p-3 rounded-2xl border border-zinc-800/80 text-center">
+            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">Total Ventas Hoy</span>
+            <span className="text-base font-black text-amber-400 tracking-tight">Bs. {Number(statsHoy.hoy || 0).toFixed(2)}</span>
+          </div>
+          <div className="bg-zinc-950/80 p-3 rounded-2xl border border-zinc-800/80 text-center">
+            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">Total Efectivo</span>
+            <span className="text-base font-black text-emerald-400 tracking-tight">Bs. {Number(statsHoy.totalEfectivo || 0).toFixed(2)}</span>
+          </div>
+          <div className="bg-zinc-950/80 p-3 rounded-2xl border border-zinc-800/80 text-center">
+            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">Total QR</span>
+            <span className="text-base font-black text-cyan-400 tracking-tight">Bs. {Number(statsHoy.totalQR || 0).toFixed(2)}</span>
+          </div>
+          <div className="bg-zinc-950/80 p-3 rounded-2xl border border-zinc-800/80 text-center">
+            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">Pedidos / Tickets</span>
+            <span className="text-base font-black text-white tracking-tight">{statsHoy.ventasTotales || statsHoy.historial?.length || 0}</span>
           </div>
         </div>
 
-        {/* ─── Grid Principal: Formulario + Guía ───────────────────────── */}
+        {/* ─── Grid Principal: Configuración de Número + QR Scannable ──── */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-          {/* Formulario (7 columnas) */}
-          <div className="lg:col-span-7 bg-zinc-900/80 backdrop-blur-md p-6 rounded-3xl border border-zinc-800 space-y-6 shadow-xl">
+          {/* COLUMNA IZQUIERDA (6 cols): Formulario de Número y Acciones */}
+          <div className="lg:col-span-6 bg-zinc-900/80 backdrop-blur-md p-6 rounded-3xl border border-zinc-800 space-y-6 shadow-xl">
             <h2 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2 pb-3 border-b border-zinc-800">
-              <span className="text-orange-500 text-base">⚙️</span> Datos del Destinatario
+              <span className="text-emerald-400 text-lg">📞</span> Número de WhatsApp de Destino
             </h2>
 
-            <div className="space-y-4">
+            <form onSubmit={handleSave} className="space-y-4">
               {/* Código de País y Teléfono */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[11px] font-black uppercase tracking-wider text-zinc-400 mb-1.5">
-                    País / Código
+                    País
                   </label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-zinc-400">🇧🇴 +</span>
@@ -233,7 +326,7 @@ export default function WhatsAppConfig() {
                     className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-700/80 text-emerald-400 font-mono font-bold text-base focus:outline-none focus:border-emerald-500 transition-colors tracking-wider"
                   />
                   <p className="text-[10px] text-zinc-500 mt-1">
-                    Ingresa el celular que recibirá los reportes oficiales.
+                    Número al que se enviará el reporte PDF diario.
                   </p>
                 </div>
               </div>
@@ -248,115 +341,149 @@ export default function WhatsAppConfig() {
                   name="destinatario"
                   value={formData.destinatario}
                   onChange={handleChange}
-                  placeholder="Ej. Don René (Dueño) / Gerencia"
+                  placeholder="Ej. Dueño / Don René / Administración"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-700/80 text-white font-semibold text-sm focus:outline-none focus:border-emerald-500 transition-colors"
                 />
               </div>
 
-              {/* Opciones de Envío */}
-              <div className="pt-3 border-t border-zinc-800/80 space-y-3">
-                <label className="block text-[11px] font-black uppercase tracking-wider text-zinc-400">
-                  Opciones y Notificaciones
-                </label>
+              {/* Botón Guardar Número */}
+              <button
+                type="submit"
+                disabled={saving || loading}
+                className="w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-black text-xs uppercase tracking-wider border border-zinc-700 transition-all flex items-center justify-center gap-2"
+              >
+                {saving ? '⏳ Guardando...' : '💾 Guardar Número'}
+              </button>
+            </form>
 
-                <label className="flex items-center gap-3 p-3 rounded-2xl bg-zinc-950/60 border border-zinc-800/80 hover:border-zinc-700 cursor-pointer transition-colors">
-                  <input
-                    type="checkbox"
-                    name="reporte_diario"
-                    checked={formData.reporte_diario}
-                    onChange={handleChange}
-                    className="w-4 h-4 rounded text-emerald-500 focus:ring-emerald-500/20 bg-zinc-900 border-zinc-700 cursor-pointer"
-                  />
-                  <div className="text-left">
-                    <p className="text-xs font-bold text-zinc-200">Reporte Detallado de Ventas en PDF</p>
-                    <p className="text-[10px] text-zinc-500">Habilitar botón "WhatsApp PDF" en el módulo de Reportes</p>
-                  </div>
-                </label>
+            {/* Acciones Directas del Reporte PDF */}
+            <div className="pt-4 border-t border-zinc-800 space-y-3">
+              <h3 className="text-xs font-black uppercase tracking-wider text-zinc-300 flex items-center gap-2">
+                <span>📄</span> Reporte PDF Oficial
+              </h3>
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                El reporte enviado a WhatsApp es <strong className="text-white">exactamente idéntico al reporte de descarga</strong> en formato A4 con resumen de caja y tabla detallada de tickets.
+              </p>
 
-                <label className="flex items-center gap-3 p-3 rounded-2xl bg-zinc-950/60 border border-zinc-800/80 hover:border-zinc-700 cursor-pointer transition-colors">
-                  <input
-                    type="checkbox"
-                    name="notificar_cierre"
-                    checked={formData.notificar_cierre}
-                    onChange={handleChange}
-                    className="w-4 h-4 rounded text-emerald-500 focus:ring-emerald-500/20 bg-zinc-900 border-zinc-700 cursor-pointer"
-                  />
-                  <div className="text-left">
-                    <p className="text-xs font-bold text-zinc-200">Notificar Cierre de Caja</p>
-                    <p className="text-[10px] text-zinc-500">Enviar balance final al realizar el cierre del turno</p>
-                  </div>
-                </label>
-              </div>
-
-              {/* Botón Guardar dentro del form */}
-              <div className="pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={handleSave}
-                  disabled={saving || loading}
-                  className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-black text-xs uppercase tracking-widest shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  onClick={handleDescargarPDF}
+                  className="py-3 px-4 rounded-xl bg-zinc-950 hover:bg-zinc-800 text-white font-black text-xs uppercase tracking-wider border border-zinc-700 transition-all flex items-center justify-center gap-2 shadow-sm"
                 >
-                  {saving ? '⏳ Guardando...' : '💾 Guardar Configuración'}
+                  <span>📥</span> Descargar PDF
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleEnviarReporteWhatsApp}
+                  disabled={generandoPDF}
+                  className="py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-600/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <span>📲</span> {generandoPDF ? 'Generando PDF...' : 'Enviar a WhatsApp'}
                 </button>
               </div>
             </div>
+
+            {/* Vista Previa del Mensaje que Acompaña al PDF */}
+            <div className="pt-3 border-t border-zinc-800">
+              <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block mb-2">
+                💬 Formato del Mensaje en WhatsApp:
+              </span>
+              <div className="p-3.5 rounded-2xl bg-[#0b241c] border border-emerald-600/30 text-emerald-100 font-mono text-[10px] leading-relaxed">
+                <p className="font-bold text-emerald-300">🍗 POLLERÍA "EL POLLÓN" — REPORTE OFICIAL</p>
+                <p className="text-emerald-400/80">📅 Fecha: {new Date().toLocaleDateString('es-BO')}</p>
+                <p className="text-emerald-600/60 my-0.5">━━━━━━━━━━━━━━━━━━━━━</p>
+                <p className="font-bold text-white">💰 Total Ventas:   Bs. {Number(statsHoy.hoy || 0).toFixed(2)}</p>
+                <p className="text-emerald-200">💵 Total Efectivo: Bs. {Number(statsHoy.totalEfectivo || 0).toFixed(2)}</p>
+                <p className="text-emerald-200">📱 Total QR:       Bs. {Number(statsHoy.totalQR || 0).toFixed(2)}</p>
+                <p className="text-emerald-200">🧾 Tickets:        {statsHoy.ventasTotales || statsHoy.historial?.length || 0} pedidos</p>
+                <p className="text-emerald-600/60 my-0.5">━━━━━━━━━━━━━━━━━━━━━</p>
+                <p className="text-emerald-300 italic">📎 Se adjunta el PDF oficial con detalle completo.</p>
+              </div>
+            </div>
+
           </div>
 
-          {/* Lateral Derecho (5 columnas): Vista Previa y Pasos */}
-          <div className="lg:col-span-5 space-y-6">
-
-            {/* Simulación del Mensaje en WhatsApp */}
-            <div className="bg-zinc-900/80 backdrop-blur-md p-5 rounded-3xl border border-zinc-800 shadow-xl space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-zinc-800">
-                <span className="text-[11px] font-black text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="text-emerald-400">💬</span> Vista Previa del Reporte
-                </span>
-                <span className="text-[9px] font-mono text-zinc-500 uppercase tracking-widest">
-                  +{cleanPhone}
-                </span>
+          {/* COLUMNA DERECHA (6 cols): El QR para Enviar el Reporte */}
+          <div className="lg:col-span-6 bg-zinc-900/80 backdrop-blur-md p-6 rounded-3xl border border-zinc-800 flex flex-col items-center justify-between shadow-xl space-y-6 text-center">
+            
+            <div className="w-full">
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <span className="text-xl">📷</span>
+                <h2 className="text-sm font-black text-white uppercase tracking-wider">
+                  Código QR para Enviar Reporte
+                </h2>
               </div>
-
-              {/* Burbuja estilo WhatsApp */}
-              <div className="p-3.5 rounded-2xl bg-[#0b241c] border border-emerald-600/30 text-emerald-100 font-mono text-[11px] leading-relaxed shadow-inner">
-                <p className="font-bold text-emerald-300">🍗 POLLERÍA "EL POLLÓN" — REPORTE OFICIAL</p>
-                <p className="text-emerald-400/80 text-[10px]">📅 Período: Hoy (11/11/2026)</p>
-                <p className="text-emerald-600/60 my-1">━━━━━━━━━━━━━━━━━━━━━</p>
-                <p className="font-bold text-white">💰 Total Recaudado: Bs. 185.00</p>
-                <p className="text-emerald-200">💵 Efectivo:        Bs. 69.00</p>
-                <p className="text-emerald-200">📱 QR:              Bs. 116.00</p>
-                <p className="text-emerald-200">🧾 Tickets:         8 pedidos</p>
-                <p className="text-emerald-600/60 my-1">━━━━━━━━━━━━━━━━━━━━━</p>
-                <p className="text-[10px] text-emerald-300">👤 Por: Administrador</p>
-                <p className="text-[10px] text-emerald-400 italic">📎 Se adjunta el PDF con detalle completo.</p>
-              </div>
-
-              <p className="text-[10px] text-zinc-500 italic text-center">
-                El PDF se genera en formato oficial A4 idéntico al solicitado y se descarga al presionar enviar.
+              <p className="text-xs text-zinc-400 max-w-sm mx-auto">
+                Apunta la cámara de tu celular a este QR para abrir WhatsApp y enviar el reporte oficial de hoy a <strong className="text-emerald-400">+{cleanPhone}</strong>.
               </p>
             </div>
 
-            {/* Cómo Funciona */}
-            <div className="bg-zinc-900/80 backdrop-blur-md p-5 rounded-3xl border border-zinc-800 shadow-xl space-y-3">
-              <h3 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5">
-                <span className="text-amber-400">💡</span> ¿Cómo se envía al WhatsApp?
-              </h3>
+            {/* Contenedor del Código QR */}
+            <div className="p-5 bg-white rounded-3xl shadow-2xl border-4 border-emerald-500/40 relative group">
+              <QRCodeCanvas
+                value={qrWhatsAppUrl}
+                size={230}
+                level="M"
+                includeMargin={false}
+                imageSettings={{
+                  src: "https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg",
+                  x: undefined,
+                  y: undefined,
+                  height: 38,
+                  width: 38,
+                  excavate: true,
+                }}
+              />
+            </div>
 
-              <div className="space-y-2.5 text-xs text-zinc-400">
-                <div className="flex gap-2.5 items-start">
-                  <span className="w-5 h-5 rounded-lg bg-orange-500/20 text-orange-400 font-bold text-[10px] flex items-center justify-center shrink-0 border border-orange-500/30">1</span>
-                  <p><strong className="text-zinc-200">Guarda tu número</strong> aquí una sola vez.</p>
+            {/* Información del Destinatario y Acciones del QR */}
+            <div className="w-full space-y-3">
+              <div className="p-3 rounded-2xl bg-zinc-950/80 border border-zinc-800 text-xs">
+                <div className="flex items-center justify-between text-zinc-400">
+                  <span>Destino:</span>
+                  <span className="font-bold text-white">+{cleanPhone}</span>
                 </div>
-
-                <div className="flex gap-2.5 items-start">
-                  <span className="w-5 h-5 rounded-lg bg-orange-500/20 text-orange-400 font-bold text-[10px] flex items-center justify-center shrink-0 border border-orange-500/30">2</span>
-                  <p>En el menú <strong className="text-zinc-200">Reportes</strong>, presiona el botón verde <strong className="text-emerald-400">"WhatsApp PDF"</strong>.</p>
+                <div className="flex items-center justify-between text-zinc-400 mt-1">
+                  <span>Contacto:</span>
+                  <span className="font-semibold text-emerald-400">{formData.destinatario || 'Administración'}</span>
                 </div>
-
-                <div className="flex gap-2.5 items-start">
-                  <span className="w-5 h-5 rounded-lg bg-orange-500/20 text-orange-400 font-bold text-[10px] flex items-center justify-center shrink-0 border border-orange-500/30">3</span>
-                  <p>El sistema descarga el PDF automáticamente y abre directamente la conversación de WhatsApp con este número.</p>
+                <div className="flex items-center justify-between text-zinc-400 mt-1">
+                  <span>Estado:</span>
+                  <span className="font-bold text-emerald-400 flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> QR Listo
+                  </span>
                 </div>
               </div>
+
+              <div className="flex gap-2 justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(qrWhatsAppUrl);
+                    toast.success('📋 Enlace de WhatsApp copiado al portapapeles');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs uppercase tracking-wider border border-zinc-700 transition-all flex items-center gap-1.5"
+                >
+                  📋 Copiar Enlace
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleEnviarReporteWhatsApp}
+                  disabled={generandoPDF}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md shadow-emerald-600/30"
+                >
+                  📲 Abrir WhatsApp Web
+                </button>
+              </div>
+            </div>
+
+            {/* Instrucción Rápida */}
+            <div className="p-3 rounded-2xl bg-emerald-950/30 border border-emerald-500/20 text-left w-full text-[11px] text-zinc-400">
+              <span className="font-bold text-emerald-300 block mb-0.5">💡 ¿Cómo funciona el QR?</span>
+              Al escanearlo con cualquier teléfono móvil, se abre WhatsApp con la conversación directa de este número y el balance de ventas de hoy listo para enviar junto con el PDF.
             </div>
 
           </div>

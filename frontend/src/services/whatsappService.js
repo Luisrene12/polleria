@@ -2,10 +2,6 @@ import api from './api';
 import { toast } from 'react-hot-toast';
 
 /**
- * Servicio integral para WhatsApp (Configuración y Envíos Directos)
- */
-
-/**
  * Normaliza y formatea un número de WhatsApp para enlace internacional (wa.me / api.whatsapp.com)
  * Por defecto en Bolivia antepone el código 591 si el número tiene 8 dígitos.
  */
@@ -22,13 +18,20 @@ export const formatWhatsAppNumber = (phone, countryCode = '591') => {
 };
 
 /**
+ * Genera el enlace directo para enviar mensaje de WhatsApp
+ */
+export const getWhatsAppDirectUrl = (phone, message, countryCode = '591') => {
+  const cleanPhone = formatWhatsAppNumber(phone, countryCode);
+  return cleanPhone
+    ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`
+    : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+};
+
+/**
  * Abre directamente la conversación de WhatsApp con el número y mensaje especificado.
  */
 export const openWhatsAppDirect = (phone, message, countryCode = '591') => {
-  const cleanPhone = formatWhatsAppNumber(phone, countryCode);
-  const url = cleanPhone
-    ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`
-    : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+  const url = getWhatsAppDirectUrl(phone, message, countryCode);
   window.open(url, '_blank');
 };
 
@@ -56,6 +59,53 @@ export const saveWhatsAppConfig = async (config) => {
     console.error('Error al guardar config de WhatsApp:', error);
     throw error;
   }
+};
+
+/**
+ * Subir reporte PDF al servidor para generar enlace de descarga público
+ */
+export const uploadPDFReport = async (pdfBase64, filename = 'reporte.pdf') => {
+  try {
+    const res = await api.post('/whatsapp/subir-pdf', {
+      pdf_base64: pdfBase64,
+      filename: filename
+    });
+    return res.data;
+  } catch (error) {
+    console.error('Error al subir PDF al servidor:', error);
+    return null;
+  }
+};
+
+/**
+ * Comparte el archivo PDF real por WhatsApp o abre el chat con enlace
+ */
+export const shareOrOpenWhatsApp = async ({ phone, message, pdfBlob, filename, countryCode = '591' }) => {
+  const cleanPhone = formatWhatsAppNumber(phone, countryCode);
+
+  // 1. Intentar compartir archivo PDF nativo (móviles Android, iOS, Windows con soporte de Web Share API)
+  if (navigator.share && pdfBlob && filename) {
+    try {
+      const file = new File([pdfBlob], filename, { type: 'application/pdf' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: 'Reporte Oficial Pollería El Pollón',
+          text: message
+        });
+        toast.success('Reporte PDF compartido exitosamente', { icon: '✅' });
+        return true;
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.warn('Web Share no disponible o cancelado, usando fallback:', err);
+      }
+    }
+  }
+
+  // 2. Fallback estándar: abre WhatsApp directamente
+  openWhatsAppDirect(phone, message, countryCode);
+  return false;
 };
 
 /**

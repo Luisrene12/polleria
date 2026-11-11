@@ -2,7 +2,14 @@ import { useState, useEffect, useMemo } from 'react';
 import { getDashboardData, getVentasPorProducto, getVentasPorCajero } from '../../services/reporteService';
 import { eliminarVenta, editarVenta } from '../../services/ventaService';
 import { useAuth } from '../../context/AuthContext';
-import { getWhatsAppConfig, formatWhatsAppNumber } from '../../services/whatsappService';
+import { 
+    getWhatsAppConfig, 
+    formatWhatsAppNumber, 
+    uploadPDFReport, 
+    shareOrOpenWhatsApp, 
+    getWhatsAppDirectUrl 
+} from '../../services/whatsappService';
+import { QRCodeCanvas } from 'qrcode.react';
 import { toast } from 'react-hot-toast';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -39,6 +46,10 @@ export default function VentasGenerales() {
 
     // Modal de detalle de ticket
     const [ticketDetalle, setTicketDetalle] = useState(null);
+
+    // Modal de QR para WhatsApp y Configuración
+    const [showQRModal, setShowQRModal] = useState(false);
+    const [waConfig, setWaConfig] = useState({ telefono: '63583775', codigo_pais: '591' });
 
     const getToday = () => {
         const d = new Date();
@@ -313,34 +324,47 @@ export default function VentasGenerales() {
     };
 
     // ─── Enviar Reporte PDF por WhatsApp ───────────────────────────────────────
-    // Genera el PDF, lo descarga y abre WhatsApp directamente con el número configurado
+    // Genera el PDF idéntico al de descarga, sube para enlace y comparte en WhatsApp
     const handleWhatsAppPDF = async () => {
-        const toastId = toast.loading('Generando PDF del reporte...');
+        const toastId = toast.loading('Generando PDF oficial del reporte...');
         try {
             const doc = generarPDF();
             const label = filtroActivo === 'hoy' ? `Hoy (${fechaInicio})` : filtroActivo === 'ayer' ? `Ayer (${fechaInicio})` : `${fechaInicio} al ${fechaFin}`;
             const filename = `Reporte_ElPollon_${fechaInicio}${fechaFin !== fechaInicio ? '_al_' + fechaFin : ''}.pdf`;
 
-            // 1. Descargar el PDF automáticamente
-            doc.save(filename);
-            toast.dismiss(toastId);
-            toast.success('✅ PDF descargado — adjúntalo en el chat de WhatsApp', { duration: 5000 });
+            // 1. Obtener base64 y blob
+            const pdfBase64 = doc.output('datauristring');
+            const pdfBlob = doc.output('blob');
 
-            // 2. Obtener teléfono configurado para WhatsApp
-            let targetPhone = '63583775';
-            let targetCode = '591';
+            // 2. Descargar el PDF automáticamente
+            doc.save(filename);
+
+            // 3. Obtener teléfono configurado para WhatsApp
+            let targetPhone = waConfig.telefono || '63583775';
+            let targetCode = waConfig.codigo_pais || '591';
             try {
                 const cfg = await getWhatsAppConfig();
                 if (cfg && cfg.telefono) {
                     targetPhone = cfg.telefono;
                     if (cfg.codigo_pais) targetCode = cfg.codigo_pais;
+                    setWaConfig(cfg);
                 }
             } catch (e) {
                 console.warn('Usando teléfono por defecto:', e);
             }
-            const cleanPhone = formatWhatsAppNumber(targetPhone, targetCode);
 
-            // 3. Preparar mensaje ejecutivo
+            // 4. Subir PDF al servidor para generar enlace permanente de descarga
+            let publicPdfUrl = '';
+            try {
+                const uploadRes = await uploadPDFReport(pdfBase64, filename);
+                if (uploadRes && (uploadRes.download_url || uploadRes.url)) {
+                    publicPdfUrl = uploadRes.download_url || uploadRes.url;
+                }
+            } catch (uploadErr) {
+                console.warn('No se pudo subir PDF temporal:', uploadErr);
+            }
+
+            // 5. Preparar mensaje ejecutivo con enlace directo al PDF
             const total   = Number(stats.hoy || 0).toFixed(2);
             const ef      = Number(stats.totalEfectivo || 0).toFixed(2);
             const qr      = Number(stats.totalQR || 0).toFixed(2);
@@ -354,17 +378,27 @@ export default function VentasGenerales() {
             msg += `📱 *QR / Digital:*   Bs. ${qr}\n`;
             msg += `🧾 *Tickets:*         ${tickets} pedidos\n`;
             msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
-            msg += `👤 Por: ${user?.nombre || 'Administración'}\n`;
-            msg += `📎 _Se adjunta el PDF con detalle completo._\n`;
+            msg += `👤 *Por:* ${user?.nombre || 'Administración'}\n`;
+
+            if (publicPdfUrl) {
+                msg += `📄 *DESCARGAR REPORTE PDF:* \n👉 ${publicPdfUrl}\n`;
+                msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+            }
+
+            msg += `📎 _El reporte detallado oficial en PDF está adjunto._\n`;
             msg += `_Sistema POS El Pollón_`;
 
-            // 4. Abrir WhatsApp DIRECTAMENTE al número configurado
-            setTimeout(() => {
-                const url = cleanPhone
-                    ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(msg)}`
-                    : `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
-                window.open(url, '_blank');
-            }, 800);
+            toast.dismiss(toastId);
+            toast.success('✅ PDF generado — abriendo WhatsApp...', { duration: 4000 });
+
+            // 6. Intentar compartir archivo PDF nativo (móvil) o abrir WhatsApp directo
+            await shareOrOpenWhatsApp({
+                phone: targetPhone,
+                message: msg,
+                pdfBlob: pdfBlob,
+                filename: filename,
+                countryCode: targetCode
+            });
 
         } catch (err) {
             toast.dismiss(toastId);
@@ -495,6 +529,15 @@ export default function VentasGenerales() {
                     >
                         <span className="text-base">📱</span>
                         <span>WhatsApp PDF</span>
+                    </button>
+
+                    <button
+                        onClick={() => setShowQRModal(true)}
+                        className="px-3.5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-emerald-500/40 text-emerald-300 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+                        title="Ver código QR para escanear y enviar el reporte desde tu celular"
+                    >
+                        <span className="text-base">📷</span>
+                        <span>QR WhatsApp</span>
                     </button>
 
                     <button
@@ -1123,6 +1166,81 @@ export default function VentasGenerales() {
                                     Cerrar
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* =========================================================
+                MODAL CÓDIGO QR PARA ENVIAR REPORTE AL WHATSAPP
+               ========================================================= */}
+            {showQRModal && (
+                <div 
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn"
+                    onClick={() => setShowQRModal(false)}
+                >
+                    <div 
+                        className="bg-[#12151b] border border-zinc-700 rounded-3xl max-w-sm w-full p-6 shadow-2xl relative space-y-5 text-center"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+                            <div className="flex items-center gap-2">
+                                <span className="text-xl">📷</span>
+                                <h3 className="font-black text-sm text-white uppercase tracking-wider">QR Enviar Reporte</h3>
+                            </div>
+                            <button
+                                onClick={() => setShowQRModal(false)}
+                                className="w-7 h-7 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white flex items-center justify-center text-xs font-bold transition-colors"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <p className="text-xs text-zinc-400">
+                            Escanea este código con tu celular para enviar el reporte de ventas directamente a <strong className="text-emerald-400">+{formatWhatsAppNumber(waConfig.telefono, waConfig.codigo_pais)}</strong>
+                        </p>
+
+                        {/* Contenedor del QR */}
+                        <div className="p-4 bg-white rounded-2xl shadow-xl border-4 border-emerald-500/40 inline-block mx-auto">
+                            <QRCodeCanvas
+                                value={getWhatsAppDirectUrl(
+                                    waConfig.telefono, 
+                                    `🍗 *POLLERÍA EL POLLÓN — REPORTE OFICIAL*\n📅 Fecha: ${new Date().toLocaleDateString('es-BO')}\n💰 Total: Bs. ${Number(stats.hoy || 0).toFixed(2)}\n💵 Efectivo: Bs. ${Number(stats.totalEfectivo || 0).toFixed(2)}\n📱 QR: Bs. ${Number(stats.totalQR || 0).toFixed(2)}\n🧾 Tickets: ${stats.ventasTotales || stats.historial?.length || 0} pedidos\n👤 Por: ${user?.nombre || 'Administración'}`, 
+                                    waConfig.codigo_pais
+                                )}
+                                size={200}
+                                level="M"
+                                includeMargin={false}
+                                imageSettings={{
+                                    src: "https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg",
+                                    x: undefined,
+                                    y: undefined,
+                                    height: 34,
+                                    width: 34,
+                                    excavate: true,
+                                }}
+                            />
+                        </div>
+
+                        <div className="p-2.5 rounded-xl bg-zinc-950/80 border border-zinc-800 text-[11px] text-zinc-400">
+                            <span>Destino: </span>
+                            <span className="font-mono font-bold text-white">+{formatWhatsAppNumber(waConfig.telefono, waConfig.codigo_pais)}</span>
+                        </div>
+
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleWhatsAppPDF}
+                                className="flex-1 py-2.5 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md shadow-emerald-950/50 transition-all cursor-pointer"
+                            >
+                                <span>📲</span>
+                                <span>WhatsApp Web</span>
+                            </button>
+                            <button
+                                onClick={() => setShowQRModal(false)}
+                                className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl font-bold text-xs uppercase transition-all cursor-pointer"
+                            >
+                                Cerrar
+                            </button>
                         </div>
                     </div>
                 </div>

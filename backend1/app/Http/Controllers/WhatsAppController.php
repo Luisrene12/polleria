@@ -226,4 +226,67 @@ class WhatsAppController extends Controller
             'message' => 'PDF de reporte procesado exitosamente'
         ]);
     }
+
+    /**
+     * Sube un reporte PDF generado desde el frontend para compartir vía WhatsApp
+     */
+    public function uploadPDFReport(Request $request)
+    {
+        $request->validate([
+            'pdf_base64' => ['required', 'string'],
+            'filename'   => ['nullable', 'string', 'max:150'],
+        ]);
+
+        $base64 = $request->input('pdf_base64');
+        if (str_contains($base64, ',')) {
+            $base64 = explode(',', $base64)[1];
+        }
+
+        $decoded = base64_decode($base64);
+        if (!$decoded) {
+            return response()->json(['success' => false, 'message' => 'Archivo PDF inválido'], 400);
+        }
+
+        $cleanName = preg_replace('/[^a-zA-Z0-9_\-\.]/', '', $request->input('filename', 'reporte.pdf'));
+        if (!str_ends_with(strtolower($cleanName), '.pdf')) {
+            $cleanName .= '.pdf';
+        }
+
+        $filename = time() . '_' . $cleanName;
+        $dir = storage_path('app/public/reportes');
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+
+        file_put_contents($dir . '/' . $filename, $decoded);
+
+        $host = $request->getSchemeAndHttpHost();
+        $url = $host . '/storage/reportes/' . $filename;
+        $downloadUrl = $host . '/api/whatsapp/descargar-pdf/' . $filename;
+
+        return response()->json([
+            'success'      => true,
+            'filename'     => $filename,
+            'url'          => $url,
+            'download_url' => $downloadUrl,
+            'message'      => 'PDF de reporte guardado correctamente',
+        ]);
+    }
+
+    /**
+     * Descargar o visualizar el reporte PDF
+     */
+    public function downloadPDFReport($filename)
+    {
+        $cleanName = basename($filename);
+        $path = storage_path('app/public/reportes/' . $cleanName);
+        if (!file_exists($path)) {
+            return response()->json(['error' => 'Reporte PDF no encontrado'], 404);
+        }
+
+        return response()->file($path, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="' . $cleanName . '"',
+        ]);
+    }
 }
