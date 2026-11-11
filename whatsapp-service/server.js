@@ -1,0 +1,222 @@
+const express = require('express');
+const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
+const pino = require('pino');
+const { 
+  default: makeWASocket, 
+  DisconnectReason, 
+  useMultiFileAuthState,
+  fetchLatestBaileysVersion
+} = require('@whiskeysockets/baileys');
+
+const app = express();
+const PORT = process.env.PORT || 3002;
+
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+const AUTH_DIR = path.join(__dirname, 'auth_info_baileys');
+
+// Estado en memoria
+let sock = null;
+let currentQR = null;
+let isConnected = false;
+let userInfo = null;
+let connectionState = 'INICIANDO';
+
+const logger = pino({ level: 'silent' });
+
+async function initWhatsApp() {
+  try {
+    if (!fs.existsSync(AUTH_DIR)) {
+      fs.mkdirSync(AUTH_DIR, { recursive: true });
+    }
+
+    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+    const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
+
+    sock = makeWASocket({
+      version,
+      auth: state,
+      printQRInTerminal: true,
+      logger,
+      browser: ['Polleria El Pollon POS', 'Chrome', '1.0.0'],
+      syncFullHistory: false
+    });
+
+    sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('connection.update', (update) => {
+      const { connection, lastDisconnect, qr } = update;
+
+      if (qr) {
+        currentQR = qr;
+        isConnected = false;
+        connectionState = 'ESPERANDO_QR';
+        console.log('📲 [WHATSAPP-BOT] Nuevo código QR generado para escaneo.');
+      }
+
+      if (connection === 'close') {
+        isConnected = false;
+        currentQR = null;
+        const statusCode = lastDisconnect?.error?.output?.statusCode;
+        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+        connectionState = shouldReconnect ? 'RECONECTANDO' : 'DESCONECTADO';
+        console.log(`🔌 [WHATSAPP-BOT] Conexión cerrada. Razón: ${statusCode}. Reconectar: ${shouldReconnect}`);
+
+        if (statusCode === DisconnectReason.loggedOut) {
+          try {
+            fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+          } catch (e) {}
+        }
+
+        if (shouldReconnect) {
+          setTimeout(initWhatsApp, 3000);
+        }
+      } else if (connection === 'open') {
+        isConnected = true;
+        currentQR = null;
+        connectionState = 'CONECTADO';
+        userInfo = sock.user;
+        console.log(`✅ [WHATSAPP-BOT] ¡WhatsApp conectado exitosamente como ${userInfo?.name || userInfo?.id}!`);
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ [WHATSAPP-BOT] Error al iniciar:', error);
+    connectionState = 'ERROR';
+    setTimeout(initWhatsApp, 5000);
+  }
+}
+
+// ─── ENDPOINTS ─────────────────────────────────────────────────────────────
+
+// 1. Estado de conexión y QR actual
+app.get('/status', (req, res) => {
+  res.json({
+    ready: isConnected,
+    state: connectionState,
+    qr: currentQR,
+    user: userInfo,
+    pushname: userInfo?.name || userInfo?.notify || 'Dueño Pollería'
+  });
+});
+
+// 2. Enviar Reporte PDF directamente (SIN abrir WhatsApp Web)
+app.post('/send-pdf', async (req, res) => {
+  if (!isConnected || !sock) {
+    return res.status(400).json({
+      success: false,
+      message: 'WhatsApp no está conectado. Por favor escanea el código QR primero en el menú WhatsApp.'
+    });
+  }
+
+  const { phone, pdfBase64, filename, caption } = req.body;
+
+  if (!phone || !pdfBase64) {
+    return res.status(400).json({
+      success: false,
+      message: 'Faltan parámetros: phone o pdfBase64 requeridos'
+    });
+  }
+
+  try {
+    let cleanPhone = phone.toString().replace(/\D/g, '');
+    if (!cleanPhone.startsWith('591') && cleanPhone.length <= 8) {
+      cleanPhone = `591${cleanPhone}`;
+    }
+
+    const jid = `${cleanPhone}@s.whatsapp.net`;
+    let base64Data = pdfBase64;
+    if (base64Data.includes(',')) {
+      base64Data = base64Data.split(',')[1];
+    }
+
+    const buffer = Buffer.from(base64Data, 'base64');
+    const docName = filename || 'Reporte_Ventas_ElPollon.pdf';
+
+    console.log(`📤 [WHATSAPP-BOT] Enviando PDF de reporte directo a ${jid}...`);
+
+    const result = await sock.sendMessage(jid, {
+      document: buffer,
+      mimetype: 'application/pdf',
+      fileName: docName,
+      caption: caption || '🍗 Reporte Oficial de Ventas — Pollería El Pollón'
+    });
+
+    console.log(`✅ [WHATSAPP-BOT] Reporte PDF enviado exitosamente a ${jid}`);
+
+    res.json({
+      success: true,
+      message: 'Reporte PDF enviado directamente por WhatsApp con éxito',
+      id: result?.key?.id
+    });
+  } catch (err) {
+    console.error('❌ [WHATSAPP-BOT] Error al enviar PDF:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Error al enviar el reporte por WhatsApp: ' + err.message
+    });
+  }
+});
+
+// 3. Enviar texto plano
+app.post('/send-text', async (req, res) => {
+  if (!isConnected || !sock) {
+    return res.status(400).json({
+      success: false,
+      message: 'WhatsApp no está conectado.'
+    });
+  }
+
+  const { phone, message } = req.body;
+  try {
+    let cleanPhone = phone.toString().replace(/\D/g, '');
+    if (!cleanPhone.startsWith('591') && cleanPhone.length <= 8) {
+      cleanPhone = `591${cleanPhone}`;
+    }
+
+    const jid = `${cleanPhone}@s.whatsapp.net`;
+    await sock.sendMessage(jid, { text: message });
+
+    res.json({ success: true, message: 'Mensaje enviado' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 4. Desconectar y borrar sesión para generar un nuevo QR
+app.post('/logout', async (req, res) => {
+  try {
+    if (sock) {
+      await sock.logout().catch(() => {});
+    }
+  } catch (e) {}
+
+  try {
+    fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+  } catch (e) {}
+
+  isConnected = false;
+  currentQR = null;
+  connectionState = 'DESCONECTADO';
+  userInfo = null;
+
+  setTimeout(initWhatsApp, 1500);
+
+  res.json({ success: true, message: 'Sesión cerrada correctamente. Generando nuevo QR...' });
+});
+
+// 5. Reiniciar conexión
+app.post('/restart', (req, res) => {
+  setTimeout(initWhatsApp, 1000);
+  res.json({ success: true, message: 'Servicio reiniciado' });
+});
+
+// Iniciar servidor
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 [WHATSAPP-BOT] Microservicio escuchando en http://0.0.0.0:${PORT}`);
+  initWhatsApp();
+});

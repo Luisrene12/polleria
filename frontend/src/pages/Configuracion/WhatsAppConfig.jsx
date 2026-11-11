@@ -1,48 +1,58 @@
 import { useState, useEffect } from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { 
+  getWhatsAppStatus, 
   getWhatsAppConfig, 
   saveWhatsAppConfig, 
-  formatWhatsAppNumber, 
-  getWhatsAppDirectUrl 
+  logoutWhatsApp, 
+  resetWhatsApp,
+  formatWhatsAppNumber 
 } from '../../services/whatsappService';
 import { toast } from 'react-hot-toast';
 
 export default function WhatsAppConfig() {
-  const [metodo, setMetodo] = useState('numero'); // 'numero' | 'qr'
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
+  const [status, setStatus] = useState({ 
+    ready: false, 
+    state: 'CARGANDO', 
+    qr: null, 
+    pushname: null 
+  });
   const [formData, setFormData] = useState({
     codigo_pais: '591',
     telefono: '63583775',
     destinatario: 'Dueño / Administración'
   });
+  const [saving, setSaving] = useState(false);
+  const [loadingAction, setLoadingAction] = useState(false);
 
-  const [conectado, setConectado] = useState(false);
+  // Consultar estado de WhatsApp
+  const fetchStatus = async () => {
+    try {
+      const data = await getWhatsAppStatus();
+      if (data) {
+        setStatus(data);
+      }
+    } catch (err) {
+      console.warn('Error al consultar estado:', err);
+    }
+  };
 
   useEffect(() => {
-    const fetchConfig = async () => {
-      setLoading(true);
-      try {
-        const config = await getWhatsAppConfig();
-        if (config) {
-          const tel = config.telefono || '63583775';
-          setFormData({
-            codigo_pais: config.codigo_pais || '591',
-            telefono: tel,
-            destinatario: config.destinatario || 'Dueño / Administración'
-          });
-          setConectado(Boolean(tel && tel.trim().length >= 7));
-        }
-      } catch (err) {
-        console.error('Error al cargar config:', err);
-      } finally {
-        setLoading(false);
+    fetchStatus();
+    // Consultar configuración guardada
+    getWhatsAppConfig().then(cfg => {
+      if (cfg) {
+        setFormData({
+          codigo_pais: cfg.codigo_pais || '591',
+          telefono: cfg.telefono || '63583775',
+          destinatario: cfg.destinatario || 'Dueño / Administración'
+        });
       }
-    };
+    });
 
-    fetchConfig();
+    // Poll cada 3 segundos para detectar cuando el dueño escanea el QR
+    const interval = setInterval(fetchStatus, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleChange = (e) => {
@@ -50,15 +60,13 @@ export default function WhatsAppConfig() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleConectarNumero = async (e) => {
+  const handleSavePhone = async (e) => {
     if (e) e.preventDefault();
     if (!formData.telefono.trim()) {
-      toast.error('Ingresa un número de WhatsApp');
+      toast.error('Ingresa un número de celular');
       return;
     }
-
     setSaving(true);
-    const toastId = toast.loading('Conectando número de WhatsApp...');
     try {
       await saveWhatsAppConfig({
         ...formData,
@@ -66,49 +74,48 @@ export default function WhatsAppConfig() {
         notificar_cierre: true,
         reporte_diario: true
       });
-      setConectado(true);
-      toast.success('✅ WhatsApp conectado correctamente con este número', { id: toastId });
+      toast.success('✅ Número de destino guardado');
     } catch (err) {
-      console.error('Error al conectar:', err);
-      toast.error('Error al conectar WhatsApp', { id: toastId });
+      toast.error('Error al guardar número');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDesconectar = async () => {
-    if (!window.confirm('¿Deseas desconectar este número de WhatsApp?')) return;
-    setSaving(true);
+  const handleLogout = async () => {
+    if (!window.confirm('¿Deseas cerrar la sesión de WhatsApp del sistema? Tendrás que escanear un nuevo QR.')) return;
+    setLoadingAction(true);
+    const toastId = toast.loading('Cerrando sesión de WhatsApp...');
     try {
-      await saveWhatsAppConfig({
-        codigo_pais: '591',
-        telefono: '',
-        destinatario: ''
-      });
-      setFormData({
-        codigo_pais: '591',
-        telefono: '',
-        destinatario: ''
-      });
-      setConectado(false);
-      toast.success('WhatsApp desconectado');
+      await logoutWhatsApp();
+      toast.success('Sesión cerrada. Esperando nuevo QR...', { id: toastId });
+      setTimeout(fetchStatus, 2000);
     } catch (err) {
-      toast.error('Error al desconectar');
+      toast.error('Error al cerrar sesión', { id: toastId });
     } finally {
-      setSaving(false);
+      setLoadingAction(false);
+    }
+  };
+
+  const handleReset = async () => {
+    setLoadingAction(true);
+    const toastId = toast.loading('Regenerando código QR...');
+    try {
+      await resetWhatsApp();
+      toast.success('Nuevo QR generado', { id: toastId });
+      setTimeout(fetchStatus, 2000);
+    } catch (err) {
+      toast.error('Error al reiniciar', { id: toastId });
+    } finally {
+      setLoadingAction(false);
     }
   };
 
   const cleanPhone = formatWhatsAppNumber(formData.telefono, formData.codigo_pais);
-  const qrUrl = getWhatsAppDirectUrl(
-    formData.telefono || '63583775',
-    '🍗 *POLLERÍA EL POLLÓN*\n✅ *WhatsApp Conectado*\nEste dispositivo está vinculado para recibir los reportes de ventas.',
-    formData.codigo_pais
-  );
 
   return (
     <div className="bg-transparent min-h-screen p-4 md:p-8 relative z-10 text-white flex items-center justify-center">
-      <div className="max-w-xl w-full space-y-6">
+      <div className="max-w-2xl w-full space-y-6">
 
         {/* Encabezado */}
         <div className="text-center space-y-2">
@@ -116,179 +123,152 @@ export default function WhatsAppConfig() {
             📱
           </div>
           <h1 className="text-2xl font-black text-white tracking-tight uppercase">
-            Conectar WhatsApp
+            Vincular WhatsApp del Dueño
           </h1>
-          <p className="text-xs text-zinc-400">
-            Conéctate mediante código QR o ingresando el número directo
+          <p className="text-xs text-zinc-400 max-w-md mx-auto">
+            Escanea el código QR para conectar el sistema a WhatsApp y enviar los reportes directamente sin abrir pestañas.
           </p>
         </div>
 
-        {/* Estado de la Conexión */}
-        <div className={`p-4 rounded-2xl border backdrop-blur-md flex items-center justify-between gap-3 ${
-          conectado 
-            ? 'bg-emerald-950/30 border-emerald-500/40' 
-            : 'bg-zinc-900/60 border-zinc-800'
-        }`}>
-          <div className="flex items-center gap-3">
-            <span className={`w-3 h-3 rounded-full ${conectado ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-600'}`}></span>
-            <div>
-              <p className="text-xs font-black uppercase tracking-wider text-white">
-                {conectado ? 'WhatsApp Conectado' : 'WhatsApp Desconectado'}
-              </p>
-              {conectado && (
-                <p className="text-[11px] font-mono text-emerald-400 font-bold">
-                  +{cleanPhone} {formData.destinatario && `(${formData.destinatario})`}
+        {/* TARJETA PRINCIPAL */}
+        <div className="bg-zinc-900/80 backdrop-blur-md p-6 sm:p-8 rounded-3xl border border-zinc-800 shadow-2xl space-y-6">
+
+          {status.ready ? (
+            /* ==============================================================
+               ESTADO CONECTADO
+               ============================================================== */
+            <div className="text-center space-y-6">
+              <div className="inline-flex w-20 h-20 rounded-full bg-emerald-500/20 border-2 border-emerald-500/40 items-center justify-center text-4xl animate-bounce">
+                ✅
+              </div>
+
+              <div className="space-y-1">
+                <h2 className="text-xl font-black text-white uppercase tracking-wider">
+                  ¡WhatsApp Conectado al Sistema!
+                </h2>
+                <p className="text-emerald-400 font-bold text-sm">
+                  Sesión activa: {status.pushname || 'Dueño Pollería'}
                 </p>
-              )}
-            </div>
-          </div>
-
-          {conectado && (
-            <button
-              onClick={handleDesconectar}
-              disabled={saving}
-              className="text-[11px] text-zinc-400 hover:text-red-400 font-bold underline transition-colors"
-            >
-              Desconectar
-            </button>
-          )}
-        </div>
-
-        {/* Selector de Método: Número Directo vs Código QR */}
-        <div className="flex rounded-2xl bg-zinc-900/90 p-1.5 border border-zinc-800">
-          <button
-            type="button"
-            onClick={() => setMetodo('numero')}
-            className={`flex-1 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
-              metodo === 'numero'
-                ? 'bg-gradient-to-r from-emerald-600 to-green-600 text-white shadow-md shadow-emerald-950/40'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            <span>📞</span>
-            <span>Número Directo</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setMetodo('qr')}
-            className={`flex-1 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
-              metodo === 'qr'
-                ? 'bg-gradient-to-r from-emerald-600 to-green-600 text-white shadow-md shadow-emerald-950/40'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            <span>📷</span>
-            <span>Código QR</span>
-          </button>
-        </div>
-
-        {/* Tarjeta Principal de Conexión */}
-        <div className="bg-zinc-900/80 backdrop-blur-md p-6 sm:p-8 rounded-3xl border border-zinc-800 shadow-2xl">
-          
-          {/* MÉTODO 1: NÚMERO DIRECTO */}
-          {metodo === 'numero' && (
-            <form onSubmit={handleConectarNumero} className="space-y-5">
-              <div className="text-left space-y-1">
-                <h3 className="text-sm font-black text-white uppercase tracking-wider">
-                  Vincular por Número Directo
-                </h3>
-                <p className="text-xs text-zinc-400">
-                  Ingresa el número de celular que recibirá los reportes oficiales.
+                <p className="text-xs text-zinc-400 mt-2 max-w-md mx-auto">
+                  Al presionar <strong className="text-emerald-300">"Enviar a WhatsApp (PDF)"</strong> en el módulo de Reportes, el reporte en PDF se enviará <strong className="text-white">de forma automática y directa</strong> sin abrir el navegador.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-[11px] font-black uppercase tracking-wider text-zinc-400 mb-1.5">
-                    País
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-zinc-400">🇧🇴 +</span>
+              {/* Configuración de número destino */}
+              <div className="p-4 rounded-2xl bg-zinc-950/80 border border-zinc-800 text-left space-y-3">
+                <label className="block text-xs font-bold uppercase tracking-wider text-zinc-300">
+                  Número de destino que recibirá los reportes:
+                </label>
+                <div className="flex gap-2">
+                  <div className="relative w-24">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-zinc-400">🇧🇴 +</span>
                     <input
                       type="text"
                       name="codigo_pais"
                       value={formData.codigo_pais}
                       onChange={handleChange}
-                      placeholder="591"
-                      className="w-full pl-11 pr-3 py-2.5 rounded-xl bg-zinc-950 border border-zinc-700/80 text-white font-mono font-bold text-sm focus:outline-none focus:border-emerald-500"
+                      className="w-full pl-9 pr-2 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-white font-mono text-xs font-bold"
                     />
                   </div>
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label className="block text-[11px] font-black uppercase tracking-wider text-zinc-400 mb-1.5">
-                    Número de Celular <span className="text-emerald-400">*</span>
-                  </label>
                   <input
                     type="tel"
                     name="telefono"
                     value={formData.telefono}
                     onChange={handleChange}
-                    placeholder="Ej. 63583775"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-700/80 text-emerald-400 font-mono font-bold text-base focus:outline-none focus:border-emerald-500 tracking-wider"
+                    placeholder="63583775"
+                    className="flex-1 px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-emerald-400 font-mono text-sm font-bold tracking-wider"
                   />
+                  <button
+                    onClick={handleSavePhone}
+                    disabled={saving}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider transition-all"
+                  >
+                    {saving ? 'Guardando...' : 'Guardar'}
+                  </button>
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-black uppercase tracking-wider text-zinc-400 mb-1.5">
-                  Nombre o Identificador (Opcional)
-                </label>
-                <input
-                  type="text"
-                  name="destinatario"
-                  value={formData.destinatario}
-                  onChange={handleChange}
-                  placeholder="Ej. Don René / Dueño"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-700/80 text-white font-semibold text-sm focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={saving || loading}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-black text-xs uppercase tracking-widest shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-              >
-                {saving ? '⏳ Conectando...' : '✅ Conectar WhatsApp'}
-              </button>
-            </form>
-          )}
-
-          {/* MÉTODO 2: CÓDIGO QR */}
-          {metodo === 'qr' && (
-            <div className="space-y-5 text-center">
-              <div className="space-y-1">
-                <h3 className="text-sm font-black text-white uppercase tracking-wider">
-                  Vincular por Código QR
-                </h3>
-                <p className="text-xs text-zinc-400">
-                  Escanea el código QR con tu celular para conectar y abrir el chat oficial.
+                <p className="text-[10px] text-zinc-500 font-mono">
+                  Destino actual: +{cleanPhone}
                 </p>
               </div>
 
-              {/* QR Canvas */}
-              <div className="p-4 bg-white rounded-3xl shadow-2xl border-4 border-emerald-500/40 inline-block mx-auto">
-                <QRCodeCanvas
-                  value={qrUrl}
-                  size={210}
-                  level="M"
-                  includeMargin={false}
-                  imageSettings={{
-                    src: "https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg",
-                    x: undefined,
-                    y: undefined,
-                    height: 36,
-                    width: 36,
-                    excavate: true,
-                  }}
-                />
+              <div className="pt-2">
+                <button
+                  onClick={handleLogout}
+                  disabled={loadingAction}
+                  className="px-6 py-2.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 hover:text-white border border-red-500/30 text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
+                >
+                  {loadingAction ? 'Cerrando sesión...' : '🔌 Desvincular / Cerrar Sesión'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* ==============================================================
+               ESTADO PENDIENTE DE ESCANEO QR
+               ============================================================== */
+            <div className="space-y-6 text-center">
+              <div className="space-y-1">
+                <h2 className="text-base font-black text-white uppercase tracking-wider">
+                  Escanea el Código QR con tu WhatsApp
+                </h2>
+                <p className="text-xs text-zinc-400">
+                  Usa tu celular con WhatsApp para vincular este dispositivo al sistema POS.
+                </p>
               </div>
 
-              <div className="text-xs text-zinc-400 space-y-1">
-                <p>1. Abre WhatsApp en tu celular.</p>
-                <p>2. Apunta la cámara a este código QR.</p>
-                <p>3. Se abrirá la conversación directa para enviar reportes a <strong className="text-white">+{cleanPhone}</strong>.</p>
+              {/* Contenedor del QR */}
+              <div className="flex justify-center">
+                {status.qr ? (
+                  <div className="p-4 bg-white rounded-3xl shadow-2xl border-4 border-emerald-500/40 inline-block relative group">
+                    <QRCodeCanvas
+                      value={status.qr}
+                      size={250}
+                      level="L"
+                      includeMargin={false}
+                      imageSettings={{
+                        src: "https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg",
+                        x: undefined,
+                        y: undefined,
+                        height: 40,
+                        width: 40,
+                        excavate: true,
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="w-64 h-64 bg-zinc-950/90 rounded-3xl flex flex-col items-center justify-center border-2 border-dashed border-zinc-700 p-6 space-y-3">
+                    <span className="text-4xl animate-spin text-emerald-400">⏳</span>
+                    <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                      Generando código QR...
+                    </p>
+                    <p className="text-[10px] text-zinc-600">
+                      Iniciando el puente de WhatsApp
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Pasos para vincular */}
+              <div className="bg-zinc-950/70 p-4 rounded-2xl border border-zinc-800 text-left space-y-2 text-xs text-zinc-400">
+                <p className="font-bold text-white text-[11px] uppercase tracking-wider">
+                  📱 Pasos para vincular en tu celular:
+                </p>
+                <div className="space-y-1.5 pl-1">
+                  <p><strong className="text-emerald-400">1.</strong> Abre WhatsApp en tu celular.</p>
+                  <p><strong className="text-emerald-400">2.</strong> Toca en los tres puntos ⋮ o Ajustes &gt; <strong>Dispositivos vinculados</strong>.</p>
+                  <p><strong className="text-emerald-400">3.</strong> Toca en <strong>Vincular un dispositivo</strong> y apunta tu cámara a este código QR.</p>
+                </div>
+              </div>
+
+              {/* Botón para forzar nuevo QR */}
+              <div className="flex justify-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  disabled={loadingAction}
+                  className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs uppercase tracking-wider border border-zinc-700 transition-all flex items-center gap-2"
+                >
+                  🔄 Regenerar Código QR
+                </button>
               </div>
             </div>
           )}

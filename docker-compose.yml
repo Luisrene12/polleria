@@ -133,6 +133,22 @@ services:
       timeout: 5s
       retries: 3
 
+  # ─────────────────────────────────────────────────────────────────
+  # 🟢  WHATSAPP - Microservicio Bot Baileys (Envío Directo sin navegador)
+  # ─────────────────────────────────────────────────────────────────
+  whatsapp:
+    build:
+      context: ./whatsapp-service
+      dockerfile: Dockerfile
+    container_name: polleria_whatsapp
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    volumes:
+      - whatsapp_auth:/app/auth_info_baileys
+    networks:
+      - polleria_network
+
 # ─────────────────────────────────────────────────────────────────
 # 📦  VOLÚMENES PERSISTENTES
 # ─────────────────────────────────────────────────────────────────
@@ -142,6 +158,8 @@ volumes:
   backend_storage:
     driver: local
   backend_logs:
+    driver: local
+  whatsapp_auth:
     driver: local
 
 # ─────────────────────────────────────────────────────────────────

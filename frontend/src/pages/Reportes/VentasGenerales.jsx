@@ -6,7 +6,8 @@ import {
     getWhatsAppConfig, 
     formatWhatsAppNumber, 
     uploadPDFReport, 
-    shareOrOpenWhatsApp 
+    shareOrOpenWhatsApp,
+    sendPDFReportBot
 } from '../../services/whatsappService';
 import { toast } from 'react-hot-toast';
 import jsPDF from 'jspdf';
@@ -318,87 +319,70 @@ export default function VentasGenerales() {
         }
     };
 
-    // ─── Enviar Reporte PDF por WhatsApp ───────────────────────────────────────
-    // Genera el PDF idéntico al de descarga, sube para enlace y comparte en WhatsApp
+    // ─── Enviar Reporte PDF por WhatsApp DIRECTO (Sin abrir navegador) ─────────
     const handleWhatsAppPDF = async () => {
-        const toastId = toast.loading('Generando PDF oficial del reporte...');
+        const toastId = toast.loading('Generando y enviando reporte PDF directo por WhatsApp...');
         try {
             const doc = generarPDF();
             const label = filtroActivo === 'hoy' ? `Hoy (${fechaInicio})` : filtroActivo === 'ayer' ? `Ayer (${fechaInicio})` : `${fechaInicio} al ${fechaFin}`;
             const filename = `Reporte_ElPollon_${fechaInicio}${fechaFin !== fechaInicio ? '_al_' + fechaFin : ''}.pdf`;
 
-            // 1. Obtener base64 y blob
             const pdfBase64 = doc.output('datauristring');
-            const pdfBlob = doc.output('blob');
 
-            // 2. Descargar el PDF automáticamente
+            // Descargar copia local en la máquina por respaldo
             doc.save(filename);
 
-            // 3. Obtener teléfono configurado para WhatsApp
-            let targetPhone = waConfig.telefono || '63583775';
-            let targetCode = waConfig.codigo_pais || '591';
-            try {
-                const cfg = await getWhatsAppConfig();
-                if (cfg && cfg.telefono) {
-                    targetPhone = cfg.telefono;
-                    if (cfg.codigo_pais) targetCode = cfg.codigo_pais;
-                    setWaConfig(cfg);
-                }
-            } catch (e) {
-                console.warn('Usando teléfono por defecto:', e);
-            }
-
-            // 4. Subir PDF al servidor para generar enlace permanente de descarga
-            let publicPdfUrl = '';
-            try {
-                const uploadRes = await uploadPDFReport(pdfBase64, filename);
-                if (uploadRes && (uploadRes.download_url || uploadRes.url)) {
-                    publicPdfUrl = uploadRes.download_url || uploadRes.url;
-                }
-            } catch (uploadErr) {
-                console.warn('No se pudo subir PDF temporal:', uploadErr);
-            }
-
-            // 5. Preparar mensaje ejecutivo con enlace directo al PDF
+            // Preparar mensaje de resumen oficial
             const total   = Number(stats.hoy || 0).toFixed(2);
             const ef      = Number(stats.totalEfectivo || 0).toFixed(2);
             const qr      = Number(stats.totalQR || 0).toFixed(2);
             const tickets = stats.ventasTotales || stats.historial?.length || 0;
 
-            let msg = `🍗 *POLLERÍA EL POLLÓN — REPORTE OFICIAL*\n`;
-            msg += `📅 *Período:* ${label}\n`;
-            msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
-            msg += `💰 *Total Recaudado:* Bs. ${total}\n`;
-            msg += `💵 *Efectivo:*        Bs. ${ef}\n`;
-            msg += `📱 *QR / Digital:*   Bs. ${qr}\n`;
-            msg += `🧾 *Tickets:*         ${tickets} pedidos\n`;
-            msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
-            msg += `👤 *Por:* ${user?.nombre || 'Administración'}\n`;
+            let caption = `🍗 *POLLERÍA "EL POLLÓN" — REPORTE OFICIAL*\n`;
+            caption += `📅 *Período:* ${label}\n`;
+            caption += `━━━━━━━━━━━━━━━━━━━━━\n`;
+            caption += `💰 *Total Recaudado:* Bs. ${total}\n`;
+            caption += `💵 *Efectivo:*        Bs. ${ef}\n`;
+            caption += `📱 *QR / Digital:*   Bs. ${qr}\n`;
+            caption += `🧾 *Tickets:*         ${tickets} pedidos\n`;
+            caption += `━━━━━━━━━━━━━━━━━━━━━\n`;
+            caption += `👤 *Por:* ${user?.nombre || 'Administración'}\n`;
+            caption += `_Sistema POS El Pollón_`;
 
-            if (publicPdfUrl) {
-                msg += `📄 *DESCARGAR REPORTE PDF:* \n👉 ${publicPdfUrl}\n`;
-                msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+            // Intentar envío DIRECTO a través del bot conectado en el sistema
+            try {
+                const res = await sendPDFReportBot({
+                    pdf_base64: pdfBase64,
+                    filename: filename,
+                    caption: caption
+                });
+
+                toast.dismiss(toastId);
+                if (res.data?.success) {
+                    toast.success('✅ ¡Reporte PDF enviado directamente al WhatsApp del dueño!', { duration: 6000 });
+                    return;
+                }
+            } catch (botErr) {
+                console.warn('Bot de WhatsApp no respondió, usando fallback:', botErr);
             }
 
-            msg += `📎 _El reporte detallado oficial en PDF está adjunto._\n`;
-            msg += `_Sistema POS El Pollón_`;
+            // Fallback si el bot aún no está vinculado con QR
+            let targetPhone = waConfig.telefono || '63583775';
+            let targetCode = waConfig.codigo_pais || '591';
+            const cleanPhone = formatWhatsAppNumber(targetPhone, targetCode);
 
             toast.dismiss(toastId);
-            toast.success('✅ PDF generado — abriendo WhatsApp...', { duration: 4000 });
+            toast('⚠️ WhatsApp no está vinculado por QR en el sistema. Abre el menú WHATSAPP para vincularlo. Abriendo chat web...', { icon: '📲', duration: 6000 });
 
-            // 6. Intentar compartir archivo PDF nativo (móvil) o abrir WhatsApp directo
-            await shareOrOpenWhatsApp({
-                phone: targetPhone,
-                message: msg,
-                pdfBlob: pdfBlob,
-                filename: filename,
-                countryCode: targetCode
-            });
+            const fallbackUrl = cleanPhone
+                ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(caption)}`
+                : `https://api.whatsapp.com/send?text=${encodeURIComponent(caption)}`;
+            window.open(fallbackUrl, '_blank');
 
         } catch (err) {
             toast.dismiss(toastId);
             console.error('Error al generar PDF para WhatsApp:', err);
-            toast.error('Error al generar el PDF');
+            toast.error('Error al generar el PDF del reporte');
         }
     };
 

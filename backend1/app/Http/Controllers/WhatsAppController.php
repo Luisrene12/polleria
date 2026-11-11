@@ -109,6 +109,11 @@ class WhatsAppController extends Controller
         ]);
     }
 
+    private function getWhatsAppServiceUrl()
+    {
+        return env('WHATSAPP_SERVICE_URL', 'http://whatsapp:3002');
+    }
+
     public function getStatus(Request $request)
     {
         $user = $request->user();
@@ -126,15 +131,36 @@ class WhatsAppController extends Controller
         $digits = preg_replace('/\D/', '', $telefono);
         $completo = str_starts_with($digits, $codigoPais) ? $digits : ($codigoPais . $digits);
 
+        // Consultar al microservicio Bot de WhatsApp
+        try {
+            $resp = \Illuminate\Support\Facades\Http::timeout(3)->get($this->getWhatsAppServiceUrl() . '/status');
+            if ($resp->successful()) {
+                $botData = $resp->json();
+                return response()->json([
+                    'ready'             => $botData['ready'] ?? false,
+                    'state'             => $botData['state'] ?? 'DESCONECTADO',
+                    'pushname'          => $botData['pushname'] ?? $destinatario,
+                    'telefono'          => $telefono,
+                    'codigo_pais'       => $codigoPais,
+                    'telefono_completo' => $completo,
+                    'platform'          => 'WhatsApp Bot Directo (Sin pestañas)',
+                    'message'           => ($botData['ready'] ?? false) ? "WhatsApp conectado como {$botData['pushname']}" : 'Escanea el código QR con tu celular',
+                    'qr'                => $botData['qr'] ?? null
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('WhatsApp bot service no disponible: ' . $e->getMessage());
+        }
+
         return response()->json([
-            'ready'             => !empty($telefono),
-            'state'             => !empty($telefono) ? 'CONECTADO_DIRECTO' : 'DESCONECTADO',
+            'ready'             => false,
+            'state'             => 'INICIANDO',
             'pushname'          => $destinatario,
             'telefono'          => $telefono,
             'codigo_pais'       => $codigoPais,
             'telefono_completo' => $completo,
-            'platform'          => 'WhatsApp Direct (Reportes con 1 Clic)',
-            'message'           => !empty($telefono) ? "Listo para enviar reportes a +{$completo}" : 'Ingresa un número para activar envíos',
+            'platform'          => 'WhatsApp Bot Directo',
+            'message'           => 'Conectando con el servidor de WhatsApp...',
             'qr'                => null
         ]);
     }
@@ -197,14 +223,22 @@ class WhatsAppController extends Controller
 
     public function logout()
     {
+        try {
+            \Illuminate\Support\Facades\Http::timeout(5)->post($this->getWhatsAppServiceUrl() . '/logout');
+        } catch (\Throwable $e) {}
+
         return response()->json([
             'success' => true,
-            'message' => 'Sesión de WhatsApp cerrada.'
+            'message' => 'Sesión de WhatsApp cerrada. Se generará un nuevo QR.'
         ]);
     }
 
     public function reset()
     {
+        try {
+            \Illuminate\Support\Facades\Http::timeout(5)->post($this->getWhatsAppServiceUrl() . '/restart');
+        } catch (\Throwable $e) {}
+
         return response()->json([
             'success' => true,
             'message' => 'Servicio reiniciado.'
@@ -213,18 +247,62 @@ class WhatsAppController extends Controller
 
     public function fullReset()
     {
+        try {
+            \Illuminate\Support\Facades\Http::timeout(5)->post($this->getWhatsAppServiceUrl() . '/logout');
+        } catch (\Throwable $e) {}
+
         return response()->json([
             'success' => true,
-            'message' => 'Reinicio completo.'
+            'message' => 'Reinicio completo realizado.'
         ]);
     }
 
     public function sendPDFReport(Request $request)
     {
-        return response()->json([
-            'success' => true,
-            'message' => 'PDF de reporte procesado exitosamente'
+        $request->validate([
+            'pdf_base64' => ['required', 'string'],
+            'filename'   => ['nullable', 'string'],
+            'caption'    => ['nullable', 'string'],
         ]);
+
+        $user = $request->user();
+        $negocioId = $user ? ($user->negocio_id ?? 1) : 1;
+
+        $config = ConfiguracionNegocio::where('negocio_id', $negocioId)
+            ->where('clave', 'whatsapp_settings')
+            ->first();
+        $datos = $config ? json_decode($config->valor, true) : null;
+        $telefono = $datos['telefono'] ?? '63583775';
+        $codigoPais = $datos['codigo_pais'] ?? '591';
+
+        $cleanPhone = $codigoPais . preg_replace('/\D/', '', $telefono);
+
+        try {
+            $resp = \Illuminate\Support\Facades\Http::timeout(30)->post($this->getWhatsAppServiceUrl() . '/send-pdf', [
+                'phone'     => $cleanPhone,
+                'pdfBase64' => $request->input('pdf_base64'),
+                'filename'  => $request->input('filename', 'Reporte_Ventas_ElPollon.pdf'),
+                'caption'   => $request->input('caption', '🍗 Reporte Oficial de Ventas — Pollería El Pollón')
+            ]);
+
+            if ($resp->successful()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Reporte PDF enviado directamente al WhatsApp del dueño'
+                ]);
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $resp->json('message') ?? 'Error en el servicio de WhatsApp'
+            ], 400);
+        } catch (\Throwable $e) {
+            Log::error('Error al enviar PDF por WhatsApp: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'El servicio de WhatsApp no está conectado o no responde. Escanea el QR en el menú WhatsApp.'
+            ], 500);
+        }
     }
 
     /**

@@ -2,6 +2,17 @@ import api from './api';
 import { toast } from 'react-hot-toast';
 
 /**
+ * Envía el PDF de reporte directamente a través del bot sin abrir WhatsApp Web
+ */
+export const sendPDFReportBot = async ({ pdf_base64, filename, caption }) => {
+  return await api.post('/whatsapp/reporte-pdf', {
+    pdf_base64,
+    filename,
+    caption
+  });
+};
+
+/**
  * Normaliza y formatea un número de WhatsApp para enlace internacional (wa.me / api.whatsapp.com)
  * Por defecto en Bolivia antepone el código 591 si el número tiene 8 dígitos.
  */
