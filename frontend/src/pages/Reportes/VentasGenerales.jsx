@@ -6,10 +6,8 @@ import {
     getWhatsAppConfig, 
     formatWhatsAppNumber, 
     uploadPDFReport, 
-    shareOrOpenWhatsApp, 
-    getWhatsAppDirectUrl 
+    shareOrOpenWhatsApp 
 } from '../../services/whatsappService';
-import { QRCodeCanvas } from 'qrcode.react';
 import { toast } from 'react-hot-toast';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -46,9 +44,6 @@ export default function VentasGenerales() {
 
     // Modal de detalle de ticket
     const [ticketDetalle, setTicketDetalle] = useState(null);
-
-    // Modal de QR para WhatsApp y Configuración
-    const [showQRModal, setShowQRModal] = useState(false);
     const [waConfig, setWaConfig] = useState({ telefono: '63583775', codigo_pais: '591' });
 
     const getToday = () => {
@@ -525,19 +520,10 @@ export default function VentasGenerales() {
                     <button
                         onClick={handleWhatsAppPDF}
                         className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs flex items-center gap-2 transition-all cursor-pointer shadow-lg shadow-emerald-950/40 border border-emerald-400/30 active:scale-95"
-                        title="Genera el PDF del reporte, lo descarga y abre WhatsApp para adjuntarlo"
+                        title="Genera el PDF del reporte, lo descarga y abre WhatsApp para enviarlo directamente"
                     >
                         <span className="text-base">📱</span>
-                        <span>WhatsApp PDF</span>
-                    </button>
-
-                    <button
-                        onClick={() => setShowQRModal(true)}
-                        className="px-3.5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-emerald-500/40 text-emerald-300 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
-                        title="Ver código QR para escanear y enviar el reporte desde tu celular"
-                    >
-                        <span className="text-base">📷</span>
-                        <span>QR WhatsApp</span>
+                        <span>Enviar a WhatsApp (PDF)</span>
                     </button>
 
                     <button
@@ -1166,81 +1152,6 @@ export default function VentasGenerales() {
                                     Cerrar
                                 </button>
                             </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* =========================================================
-                MODAL CÓDIGO QR PARA ENVIAR REPORTE AL WHATSAPP
-               ========================================================= */}
-            {showQRModal && (
-                <div 
-                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn"
-                    onClick={() => setShowQRModal(false)}
-                >
-                    <div 
-                        className="bg-[#12151b] border border-zinc-700 rounded-3xl max-w-sm w-full p-6 shadow-2xl relative space-y-5 text-center"
-                        onClick={e => e.stopPropagation()}
-                    >
-                        <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
-                            <div className="flex items-center gap-2">
-                                <span className="text-xl">📷</span>
-                                <h3 className="font-black text-sm text-white uppercase tracking-wider">QR Enviar Reporte</h3>
-                            </div>
-                            <button
-                                onClick={() => setShowQRModal(false)}
-                                className="w-7 h-7 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white flex items-center justify-center text-xs font-bold transition-colors"
-                            >
-                                ✕
-                            </button>
-                        </div>
-
-                        <p className="text-xs text-zinc-400">
-                            Escanea este código con tu celular para enviar el reporte de ventas directamente a <strong className="text-emerald-400">+{formatWhatsAppNumber(waConfig.telefono, waConfig.codigo_pais)}</strong>
-                        </p>
-
-                        {/* Contenedor del QR */}
-                        <div className="p-4 bg-white rounded-2xl shadow-xl border-4 border-emerald-500/40 inline-block mx-auto">
-                            <QRCodeCanvas
-                                value={getWhatsAppDirectUrl(
-                                    waConfig.telefono, 
-                                    `🍗 *POLLERÍA EL POLLÓN — REPORTE OFICIAL*\n📅 Fecha: ${new Date().toLocaleDateString('es-BO')}\n💰 Total: Bs. ${Number(stats.hoy || 0).toFixed(2)}\n💵 Efectivo: Bs. ${Number(stats.totalEfectivo || 0).toFixed(2)}\n📱 QR: Bs. ${Number(stats.totalQR || 0).toFixed(2)}\n🧾 Tickets: ${stats.ventasTotales || stats.historial?.length || 0} pedidos\n👤 Por: ${user?.nombre || 'Administración'}`, 
-                                    waConfig.codigo_pais
-                                )}
-                                size={200}
-                                level="M"
-                                includeMargin={false}
-                                imageSettings={{
-                                    src: "https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg",
-                                    x: undefined,
-                                    y: undefined,
-                                    height: 34,
-                                    width: 34,
-                                    excavate: true,
-                                }}
-                            />
-                        </div>
-
-                        <div className="p-2.5 rounded-xl bg-zinc-950/80 border border-zinc-800 text-[11px] text-zinc-400">
-                            <span>Destino: </span>
-                            <span className="font-mono font-bold text-white">+{formatWhatsAppNumber(waConfig.telefono, waConfig.codigo_pais)}</span>
-                        </div>
-
-                        <div className="flex gap-2">
-                            <button
-                                onClick={handleWhatsAppPDF}
-                                className="flex-1 py-2.5 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md shadow-emerald-950/50 transition-all cursor-pointer"
-                            >
-                                <span>📲</span>
-                                <span>WhatsApp Web</span>
-                            </button>
-                            <button
-                                onClick={() => setShowQRModal(false)}
-                                className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl font-bold text-xs uppercase transition-all cursor-pointer"
-                            >
-                                Cerrar
-                            </button>
                         </div>
                     </div>
                 </div>

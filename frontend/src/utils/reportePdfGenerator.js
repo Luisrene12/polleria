@@ -117,3 +117,4 @@ export const generarReportePDF = ({ stats = {}, historial = [], fechaInicio = ''
 
     return doc;
 };
+
