@@ -36,6 +36,9 @@ export default function VentasGenerales() {
     const [productosData, setProductosData] = useState([]);
     const [cajerosData, setCajerosData] = useState([]);
 
+    // Modal de detalle de ticket
+    const [ticketDetalle, setTicketDetalle] = useState(null);
+
     const getToday = () => {
         const d = new Date();
         d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
@@ -390,6 +393,44 @@ export default function VentasGenerales() {
         }
     };
 
+    // Imprimir ticket térmico individual (80mm)
+    const handleImprimirTicketIndividual = (ticket) => {
+        if (!ticket) return;
+        const style = document.createElement('style');
+        style.id = 'ticket-print-style';
+        style.innerHTML = `
+            @media print {
+                @page {
+                    size: 80mm auto !important;
+                    margin: 0 !important;
+                }
+                html, body {
+                    width: 80mm !important;
+                    max-width: 80mm !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    background: #ffffff !important;
+                    color: #000000 !important;
+                    font-family: 'Courier New', Courier, monospace !important;
+                }
+                nav, header, footer, button, .no-print, #reporte-impresion {
+                    display: none !important;
+                }
+                #ticket-individual-impresion {
+                    display: block !important;
+                    width: 80mm !important;
+                    padding: 4mm !important;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+        window.print();
+        setTimeout(() => {
+            const s = document.getElementById('ticket-print-style');
+            if (s) s.remove();
+        }, 1200);
+    };
+
     // Filtrar historial de ventas generales
     const historialFiltrado = useMemo(() => {
         return (stats.historial || []).filter(item => {
@@ -688,7 +729,7 @@ export default function VentasGenerales() {
                                         <th className="p-3.5">Cajero</th>
                                         <th className="p-3.5">Método de Pago</th>
                                         <th className="p-3.5 text-right">Monto</th>
-                                        {esAdmin && <th className="p-3.5 text-center">Acciones</th>}
+                                        <th className="p-3.5 text-center">Acciones</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-zinc-800/60">
@@ -733,31 +774,41 @@ export default function VentasGenerales() {
                                                 Bs. {Number(v.total).toFixed(2)}
                                             </td>
 
-                                            {esAdmin && (
-                                                <td className="p-3.5 text-center">
-                                                    <div className="flex items-center justify-center gap-1.5">
-                                                        <button
-                                                            onClick={() => handleEditar(v)}
-                                                            className="px-2 py-1 bg-zinc-800 hover:bg-orange-500 text-zinc-300 hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer"
-                                                            title="Editar cliente"
-                                                        >
-                                                            ✏️
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleEliminar(v.nota)}
-                                                            className="px-2 py-1 bg-rose-500/20 hover:bg-rose-600 text-rose-400 hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer"
-                                                            title="Eliminar venta y devolver stock"
-                                                        >
-                                                            🗑️
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            )}
+                                            <td className="p-3.5 text-center">
+                                                <div className="flex items-center justify-center gap-1.5">
+                                                    <button
+                                                        onClick={() => setTicketDetalle(v)}
+                                                        className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500 text-amber-400 hover:text-white border border-amber-500/40 rounded-lg text-[10px] font-black transition-all cursor-pointer flex items-center gap-1 shadow-sm active:scale-95"
+                                                        title="Ver Detalle de Pedidos y Ticket"
+                                                    >
+                                                        <span>🧾</span>
+                                                        <span>Ticket</span>
+                                                    </button>
+                                                    {esAdmin && (
+                                                        <>
+                                                            <button
+                                                                onClick={() => handleEditar(v)}
+                                                                className="px-2 py-1 bg-zinc-800 hover:bg-orange-500 text-zinc-300 hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer"
+                                                                title="Editar cliente"
+                                                            >
+                                                                ✏️
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleEliminar(v.nota)}
+                                                                className="px-2 py-1 bg-rose-500/20 hover:bg-rose-600 text-rose-400 hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer"
+                                                                title="Eliminar venta y devolver stock"
+                                                            >
+                                                                🗑️
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </td>
                                         </tr>
                                     ))}
                                     {historialFiltrado.length === 0 && (
                                         <tr>
-                                            <td colSpan={esAdmin ? 8 : 7} className="p-12 text-center text-zinc-500 italic">
+                                            <td colSpan={8} className="p-12 text-center text-zinc-500 italic">
                                                 No se encontraron tickets con los filtros seleccionados
                                             </td>
                                         </tr>
@@ -1011,6 +1062,179 @@ export default function VentasGenerales() {
                     </div>
                 </div>
             </div>
+
+            {/* =========================================================
+                MODAL PROFESIONAL: DETALLE DE PEDIDOS Y TICKET DE VENTA
+               ========================================================= */}
+            {ticketDetalle && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200 no-print">
+                    <div className="bg-[#12151b] border-2 border-orange-500/40 rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                        {/* Cabecera del modal */}
+                        <div className="bg-gradient-to-r from-orange-500 to-amber-500 px-5 py-3.5 flex justify-between items-center text-white">
+                            <div className="flex items-center gap-2.5">
+                                <span className="text-2xl">🧾</span>
+                                <div>
+                                    <h3 className="text-sm font-black uppercase tracking-tight leading-none">
+                                        Ticket #{ticketDetalle.nota}
+                                    </h3>
+                                    <p className="text-[10px] text-orange-100 font-bold mt-0.5">
+                                        Detalle Completo del Pedido
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setTicketDetalle(null)}
+                                className="w-7 h-7 rounded-full bg-black/30 hover:bg-black/60 text-white flex items-center justify-center text-xs font-black transition-colors cursor-pointer"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        {/* Contenido Visual Estilo Ticket Térmico */}
+                        <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+                            <div className="bg-[#171b24] border border-[#272e3d] rounded-2xl p-4 font-mono text-xs text-zinc-200 shadow-inner space-y-3">
+                                <div className="text-center pb-3 border-b border-zinc-700/60 border-dashed">
+                                    <span className="text-2xl block mb-1">🍗</span>
+                                    <h4 className="font-black text-sm uppercase text-white tracking-wider">
+                                        POLLERÍA EL POLLÓN
+                                    </h4>
+                                    <p className="text-[10px] text-zinc-400">"El auténtico sabor tradicional"</p>
+                                    <div className="inline-block px-3 py-1 bg-orange-500/10 border border-orange-500/30 rounded-full text-amber-400 font-bold text-xs mt-2">
+                                        Comprobante #{ticketDetalle.nota}
+                                    </div>
+                                </div>
+
+                                {/* Metadatos */}
+                                <div className="space-y-1 text-[11px] pb-3 border-b border-zinc-700/60 border-dashed">
+                                    <div className="flex justify-between">
+                                        <span className="text-zinc-400">Fecha & Hora:</span>
+                                        <span className="font-bold text-white">{ticketDetalle.fecha}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-zinc-400">Cliente:</span>
+                                        <span className="font-bold text-amber-300 uppercase">
+                                            {ticketDetalle.cliente || 'Cliente Mostrador'}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-zinc-400">Atendido por:</span>
+                                        <span className="font-bold text-zinc-300">
+                                            {ticketDetalle.vendedor || 'Personal de Turno'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Detalle de Platos / Ítems */}
+                                <div className="space-y-2 pb-3 border-b border-zinc-700/60 border-dashed">
+                                    <p className="text-[10px] font-black uppercase text-amber-400 tracking-wider">
+                                        Platos & Productos:
+                                    </p>
+                                    <div className="space-y-1.5">
+                                        {ticketDetalle.productos 
+                                            ? ticketDetalle.productos.split(',').map((item, idx) => (
+                                                <div 
+                                                    key={idx} 
+                                                    className="flex items-center justify-between p-2 bg-[#12151c] rounded-xl border border-zinc-800 text-xs text-white"
+                                                >
+                                                    <span className="font-semibold">{item.trim()}</span>
+                                                </div>
+                                            ))
+                                            : <p className="text-zinc-500 italic text-center py-2">Sin detalle registrado</p>
+                                        }
+                                    </div>
+                                </div>
+
+                                {/* Método de Pago y Totales */}
+                                <div className="space-y-2 pt-1">
+                                    <div className="flex justify-between items-center text-[11px]">
+                                        <span className="text-zinc-400">Método de Pago:</span>
+                                        <span className="font-black uppercase text-amber-400">
+                                            {ticketDetalle.metodo_pago === 'mixto' ? '⚡ MIXTO' : ticketDetalle.metodo_pago === 'efectivo' ? '💵 EFECTIVO' : '📱 QR / BANCO'}
+                                        </span>
+                                    </div>
+
+                                    {ticketDetalle.metodo_pago === 'mixto' && (
+                                        <div className="p-2.5 bg-[#12151c] rounded-xl border border-amber-500/20 text-[11px] space-y-1">
+                                            <div className="flex justify-between text-emerald-400">
+                                                <span>💵 En Efectivo:</span>
+                                                <span className="font-black">Bs. {Number(ticketDetalle.monto_efectivo || 0).toFixed(2)}</span>
+                                            </div>
+                                            <div className="flex justify-between text-blue-400">
+                                                <span>📱 En QR / Banco:</span>
+                                                <span className="font-black">Bs. {Number(ticketDetalle.monto_tarjeta || 0).toFixed(2)}</span>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="flex justify-between items-center text-sm font-black pt-2 border-t border-zinc-700/60">
+                                        <span className="text-white">TOTAL COBRADO:</span>
+                                        <span className="text-amber-400 text-base">Bs. {Number(ticketDetalle.total).toFixed(2)}</span>
+                                    </div>
+                                </div>
+
+                                <div className="text-center pt-2 text-[10px] text-zinc-500 italic">
+                                    ¡Gracias por su compra!
+                                </div>
+                            </div>
+
+                            {/* Botones de acción del modal */}
+                            <div className="flex gap-2.5 pt-1">
+                                <button
+                                    onClick={() => handleImprimirTicketIndividual(ticketDetalle)}
+                                    className="flex-1 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:brightness-110 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md shadow-orange-500/30 transition-all cursor-pointer active:scale-95"
+                                >
+                                    <span>🖨️</span>
+                                    <span>Imprimir Ticket</span>
+                                </button>
+                                <button
+                                    onClick={() => setTicketDetalle(null)}
+                                    className="px-5 py-2.5 bg-[#181c24] hover:bg-[#202530] text-zinc-300 hover:text-white border border-zinc-700/60 rounded-xl font-bold text-xs uppercase transition-all cursor-pointer"
+                                >
+                                    Cerrar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* =========================================================
+                TICKET TÉRMICO INDIVIDUAL (PRINT ONLY 80mm)
+               ========================================================= */}
+            {ticketDetalle && (
+                <div id="ticket-individual-impresion" className="hidden print:block w-[80mm] bg-white text-black p-2 font-mono mx-auto text-xs leading-tight">
+                    <div className="text-center mb-2">
+                        <h2 className="font-bold text-base uppercase">POLLERÍA EL POLLÓN</h2>
+                        <p className="text-[10px] italic">"El mejor sabor en cada presa"</p>
+                        <p className="text-[10px] font-bold mt-1">TICKET DE VENTA #{ticketDetalle.nota}</p>
+                        <div className="border-b border-black border-dashed my-2"></div>
+                    </div>
+                    <div className="mb-2 text-[10px] space-y-0.5">
+                        <p className="flex justify-between"><span>FECHA:</span> <span>{ticketDetalle.fecha}</span></p>
+                        <p className="flex justify-between"><span>CLIENTE:</span> <span className="font-bold uppercase">{ticketDetalle.cliente || 'MOSTRADOR'}</span></p>
+                        <p className="flex justify-between"><span>CAJERO:</span> <span>{ticketDetalle.vendedor || 'CAJERO'}</span></p>
+                        <p className="flex justify-between"><span>PAGO:</span> <span className="font-bold">{ticketDetalle.metodo_pago === 'mixto' ? `MIXTO (Ef: Bs.${Number(ticketDetalle.monto_efectivo || 0).toFixed(2)} | QR: Bs.${Number(ticketDetalle.monto_tarjeta || 0).toFixed(2)})` : ticketDetalle.metodo_pago === 'efectivo' ? 'EFECTIVO' : 'QR DIGITAL'}</span></p>
+                    </div>
+                    <div className="border-b border-black border-dashed my-2"></div>
+                    <div className="mb-2 text-[10px] space-y-1">
+                        <p className="font-bold">DETALLE DE PEDIDO:</p>
+                        {ticketDetalle.productos 
+                            ? ticketDetalle.productos.split(',').map((p, i) => (
+                                <div key={i} className="pl-1">- {p.trim()}</div>
+                            ))
+                            : <div>- Sin detalle</div>
+                        }
+                    </div>
+                    <div className="border-b border-black border-dashed my-2"></div>
+                    <div className="flex justify-between font-bold text-sm my-2">
+                        <span>TOTAL:</span>
+                        <span>Bs. {Number(ticketDetalle.total).toFixed(2)}</span>
+                    </div>
+                    <div className="text-center text-[9px] mt-4 pt-2 border-t border-black border-dashed">
+                        ¡GRACIAS POR SU COMPRA!
+                    </div>
+                </div>
+            )}
 
         </div>
     );
