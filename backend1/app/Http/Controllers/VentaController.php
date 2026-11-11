@@ -66,6 +66,24 @@ class VentaController extends Controller
         $montoEfectivo   = (float)($validated['monto_efectivo'] ?? 0);
         $montoTarjeta    = (float)($validated['monto_tarjeta'] ?? 0);
 
+        // 2.1 Prevención estricta de ventas duplicadas por clic múltiple rápido (Idempotency Cache)
+        $requestSignature = md5(json_encode([
+            'u'      => $usuarioId,
+            'n'      => $negocioId,
+            'items'  => $validated['items'],
+            'cli'    => $cliente,
+            'met'    => $metodoPago,
+            'ef'     => $montoEfectivo,
+            'qr'     => $montoTarjeta,
+        ]));
+
+        $dedupKey = "venta_dedup_{$requestSignature}";
+        if (\Illuminate\Support\Facades\Cache::has($dedupKey)) {
+            $cachedResponse = \Illuminate\Support\Facades\Cache::get($dedupKey);
+            Log::info("🛡️ [DEDUP] Venta duplicada interceptada en backend para usuario {$usuarioId}. Devolviendo venta previa ID: {$cachedResponse['ventaId']}");
+            return response()->json($cachedResponse, 200);
+        }
+
         // 3. Reglas de facturación del restaurante
         $billingSetting = TenantBillingSetting::where('negocio_id', $negocioId)->first();
 
@@ -186,7 +204,7 @@ class VentaController extends Controller
 
             DB::commit();
 
-            return response()->json([
+            $responseData = [
                 'ventaId' => $venta->id,
                 'total'   => $totalCalculado,
                 'comprobante' => [
@@ -196,7 +214,12 @@ class VentaController extends Controller
                     'nit_cliente'        => $nitCliente,
                     'nombre_cliente'     => $cliente,
                 ],
-            ], 201);
+            ];
+
+            // Guardar durante 6 segundos para que cualquier reintento o clic múltiple devuelva la misma venta
+            \Illuminate\Support\Facades\Cache::put($dedupKey, $responseData, now()->addSeconds(6));
+
+            return response()->json($responseData, 201);
         } catch (\Throwable $e) {
             DB::rollBack();
             Log::error('🛡️ Error al procesar venta: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
