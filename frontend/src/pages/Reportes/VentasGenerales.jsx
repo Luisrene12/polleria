@@ -329,9 +329,6 @@ export default function VentasGenerales() {
 
             const pdfBase64 = doc.output('datauristring');
 
-            // Descargar copia local en la máquina por respaldo
-            doc.save(filename);
-
             // Preparar mensaje de resumen oficial
             const total   = Number(stats.hoy || 0).toFixed(2);
             const ef      = Number(stats.totalEfectivo || 0).toFixed(2);
