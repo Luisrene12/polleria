@@ -50,8 +50,8 @@ export default function WhatsAppConfig() {
       }
     });
 
-    // Poll cada 3 segundos para detectar cuando el dueño escanea el QR
-    const interval = setInterval(fetchStatus, 3000);
+    // Poll cada 1.5 segundos para detectar el QR instantáneamente
+    const interval = setInterval(fetchStatus, 1500);
     return () => clearInterval(interval);
   }, []);
 
@@ -99,13 +99,14 @@ export default function WhatsAppConfig() {
 
   const handleReset = async () => {
     setLoadingAction(true);
-    const toastId = toast.loading('Regenerando código QR...');
+    setStatus(prev => ({ ...prev, qr: null, state: 'REGENERANDO' }));
+    const toastId = toast.loading('Generando nuevo código QR instantáneo...');
     try {
       await resetWhatsApp();
-      toast.success('Nuevo QR generado', { id: toastId });
-      setTimeout(fetchStatus, 2000);
+      toast.success('QR nuevo listo para escanear', { id: toastId });
+      setTimeout(fetchStatus, 600);
     } catch (err) {
-      toast.error('Error al reiniciar', { id: toastId });
+      toast.error('Error al regenerar QR', { id: toastId });
     } finally {
       setLoadingAction(false);
     }

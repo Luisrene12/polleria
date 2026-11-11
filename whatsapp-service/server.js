@@ -6,8 +6,7 @@ const pino = require('pino');
 const { 
   default: makeWASocket, 
   DisconnectReason, 
-  useMultiFileAuthState,
-  fetchLatestBaileysVersion
+  useMultiFileAuthState
 } = require('@whiskeysockets/baileys');
 
 const app = express();
@@ -25,25 +24,40 @@ let currentQR = null;
 let isConnected = false;
 let userInfo = null;
 let connectionState = 'INICIANDO';
+let isStarting = false;
 
 const logger = pino({ level: 'silent' });
 
 async function initWhatsApp() {
+  if (isStarting) return;
+  isStarting = true;
+
   try {
     if (!fs.existsSync(AUTH_DIR)) {
       fs.mkdirSync(AUTH_DIR, { recursive: true });
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
-    const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
+
+    // Limpiar listeners del socket previo si existía
+    if (sock) {
+      try {
+        sock.ev.removeAllListeners();
+        sock.end();
+      } catch (e) {}
+      sock = null;
+    }
 
     sock = makeWASocket({
-      version,
       auth: state,
       printQRInTerminal: true,
       logger,
-      browser: ['Polleria El Pollon POS', 'Chrome', '1.0.0'],
-      syncFullHistory: false
+      browser: ['Polleria El Pollon POS', 'Chrome', '120.0.0'],
+      syncFullHistory: false,
+      connectTimeoutMs: 60000,
+      defaultQueryTimeoutMs: 60000,
+      keepAliveIntervalMs: 15000,
+      generateHighQualityLinkPreview: false
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -55,31 +69,40 @@ async function initWhatsApp() {
         currentQR = qr;
         isConnected = false;
         connectionState = 'ESPERANDO_QR';
-        console.log('📲 [WHATSAPP-BOT] Nuevo código QR generado para escaneo.');
+        console.log('📲 [WHATSAPP-BOT] Código QR generado e instantáneamente disponible.');
       }
 
       if (connection === 'close') {
         isConnected = false;
-        currentQR = null;
         const statusCode = lastDisconnect?.error?.output?.statusCode;
-        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-        connectionState = shouldReconnect ? 'RECONECTANDO' : 'DESCONECTADO';
-        console.log(`🔌 [WHATSAPP-BOT] Conexión cerrada. Razón: ${statusCode}. Reconectar: ${shouldReconnect}`);
+        console.log(`🔌 [WHATSAPP-BOT] Conexión cerrada. Código: ${statusCode}`);
 
-        if (statusCode === DisconnectReason.loggedOut) {
+        // Si fue desvinculado (401 / loggedOut)
+        if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
+          console.log('🧹 [WHATSAPP-BOT] Sesión desvinculada (401). Limpiando auth y regenerando QR de inmediato...');
           try {
             fs.rmSync(AUTH_DIR, { recursive: true, force: true });
           } catch (e) {}
+          currentQR = null;
+          userInfo = null;
+          connectionState = 'ESPERANDO_QR';
+          isStarting = false;
+          setTimeout(initWhatsApp, 1000);
+          return;
         }
 
-        if (shouldReconnect) {
-          setTimeout(initWhatsApp, 3000);
-        }
+        // Si fue caída temporal de red (515, 408, timeout)
+        currentQR = null;
+        connectionState = 'RECONECTANDO';
+        isStarting = false;
+        setTimeout(initWhatsApp, 2000);
+
       } else if (connection === 'open') {
         isConnected = true;
         currentQR = null;
         connectionState = 'CONECTADO';
         userInfo = sock.user;
+        isStarting = false;
         console.log(`✅ [WHATSAPP-BOT] ¡WhatsApp conectado exitosamente como ${userInfo?.name || userInfo?.id}!`);
       }
     });
@@ -87,7 +110,10 @@ async function initWhatsApp() {
   } catch (error) {
     console.error('❌ [WHATSAPP-BOT] Error al iniciar:', error);
     connectionState = 'ERROR';
-    setTimeout(initWhatsApp, 5000);
+    isStarting = false;
+    setTimeout(initWhatsApp, 3000);
+  } finally {
+    isStarting = false;
   }
 }
 
@@ -192,6 +218,7 @@ app.post('/logout', async (req, res) => {
   try {
     if (sock) {
       await sock.logout().catch(() => {});
+      sock.ev.removeAllListeners();
     }
   } catch (e) {}
 
@@ -201,18 +228,25 @@ app.post('/logout', async (req, res) => {
 
   isConnected = false;
   currentQR = null;
-  connectionState = 'DESCONECTADO';
+  connectionState = 'ESPERANDO_QR';
   userInfo = null;
+  isStarting = false;
 
-  setTimeout(initWhatsApp, 1500);
+  setTimeout(initWhatsApp, 500);
 
   res.json({ success: true, message: 'Sesión cerrada correctamente. Generando nuevo QR...' });
 });
 
-// 5. Reiniciar conexión
+// 5. Reiniciar conexión o regenerar QR inmediato
 app.post('/restart', (req, res) => {
-  setTimeout(initWhatsApp, 1000);
-  res.json({ success: true, message: 'Servicio reiniciado' });
+  try {
+    fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+  } catch (e) {}
+  currentQR = null;
+  isConnected = false;
+  isStarting = false;
+  setTimeout(initWhatsApp, 500);
+  res.json({ success: true, message: 'Servicio reiniciado, nuevo QR listo' });
 });
 
 // Iniciar servidor

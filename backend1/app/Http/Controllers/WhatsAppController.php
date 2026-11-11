@@ -133,7 +133,7 @@ class WhatsAppController extends Controller
 
         // Consultar al microservicio Bot de WhatsApp
         try {
-            $resp = \Illuminate\Support\Facades\Http::timeout(3)->get($this->getWhatsAppServiceUrl() . '/status');
+            $resp = \Illuminate\Support\Facades\Http::timeout(5)->get($this->getWhatsAppServiceUrl() . '/status');
             if ($resp->successful()) {
                 $botData = $resp->json();
                 return response()->json([
