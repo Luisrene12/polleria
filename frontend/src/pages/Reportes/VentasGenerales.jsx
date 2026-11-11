@@ -3,7 +3,8 @@ import { getDashboardData, getVentasPorProducto, getVentasPorCajero } from '../.
 import { eliminarVenta, editarVenta } from '../../services/ventaService';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from 'react-hot-toast';
-import { sendPDFReport } from '../../services/whatsappService';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export default function VentasGenerales() {
     const { user } = useAuth();
@@ -179,30 +180,214 @@ export default function VentasGenerales() {
         }, 1200);
     };
 
-    // Enviar Reporte PDF por WhatsApp y abrir resumen ejecutivo
-    const handleWhatsAppPDF = async () => {
-        try {
-            await sendPDFReport();
-        } catch (err) {
-            console.error('Error en PDF WhatsApp:', err);
+    // ─── Generador de PDF con jsPDF ────────────────────────────────────────────
+    const generarPDF = () => {
+        const label = filtroActivo === 'hoy'
+            ? `Hoy (${fechaInicio})`
+            : filtroActivo === 'ayer'
+            ? `Ayer (${fechaInicio})`
+            : `${fechaInicio} al ${fechaFin}`;
+
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        const pageW = doc.internal.pageSize.getWidth();
+        const now = new Date();
+        const fechaEmision = now.toLocaleDateString('es-BO', { timeZone: 'America/La_Paz' });
+        const horaEmision  = now.toLocaleTimeString('es-BO', { timeZone: 'America/La_Paz', hour: '2-digit', minute: '2-digit' });
+
+        // ── Encabezado ─────────────────────────────────────────────
+        // Banda naranja superior
+        doc.setFillColor(249, 115, 22); // orange-500
+        doc.rect(0, 0, pageW, 22, 'F');
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(16);
+        doc.text('POLLERÍA EL POLLÓN', pageW / 2, 10, { align: 'center' });
+        doc.setFontSize(9);
+        doc.text('REPORTE OFICIAL DE VENTAS & AUDITORÍA', pageW / 2, 17, { align: 'center' });
+
+        // Info de período y emisión
+        doc.setTextColor(50, 50, 50);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.text(`Período: ${label}`, 14, 29);
+        doc.text(`Generado por: ${user?.nombre || 'Administración'}`, 14, 34);
+        doc.text(`Emisión: ${fechaEmision}  ${horaEmision}`, pageW - 14, 29, { align: 'right' });
+        doc.text('Sistema POS El Pollón', pageW - 14, 34, { align: 'right' });
+
+        // Línea separadora
+        doc.setDrawColor(249, 115, 22);
+        doc.setLineWidth(0.5);
+        doc.line(14, 37, pageW - 14, 37);
+
+        // ── Tarjetas KPI ────────────────────────────────────────────
+        const kpis = [
+            { label: 'TOTAL RECAUDADO', valor: `Bs. ${Number(stats.hoy).toFixed(2)}`, color: [249, 115, 22] },
+            { label: 'EFECTIVO',        valor: `Bs. ${Number(stats.totalEfectivo).toFixed(2)}`, color: [16, 185, 129] },
+            { label: 'QR / DIGITAL',   valor: `Bs. ${Number(stats.totalQR).toFixed(2)}`, color: [59, 130, 246] },
+            { label: 'TICKETS',         valor: `${stats.ventasTotales} pedidos`, color: [139, 92, 246] },
+        ];
+        const boxW = (pageW - 28 - 9) / 4;
+        kpis.forEach((k, i) => {
+            const x = 14 + i * (boxW + 3);
+            doc.setFillColor(...k.color);
+            doc.roundedRect(x, 41, boxW, 18, 2, 2, 'F');
+            doc.setTextColor(255, 255, 255);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7);
+            doc.text(k.label, x + boxW / 2, 47.5, { align: 'center' });
+            doc.setFontSize(10);
+            doc.text(k.valor, x + boxW / 2, 54, { align: 'center' });
+        });
+
+        // ── Tabla de ventas ─────────────────────────────────────────
+        const filas = historialFiltrado.map(v => {
+            let metodoPago = '';
+            if (v.metodo_pago === 'mixto') {
+                metodoPago = `MIXTO\nEf: Bs.${Number(v.monto_efectivo||0).toFixed(2)}\nQR: Bs.${Number(v.monto_tarjeta||0).toFixed(2)}`;
+            } else if (v.metodo_pago === 'efectivo') {
+                metodoPago = 'EFECTIVO';
+            } else {
+                metodoPago = 'QR DIGITAL';
+            }
+            return [
+                `#${v.nota}`,
+                v.fecha || '—',
+                v.cliente || 'Mostrador',
+                (v.productos || '—').substring(0, 40),
+                v.vendedor || '—',
+                metodoPago,
+                `Bs. ${Number(v.total).toFixed(2)}`,
+            ];
+        });
+
+        autoTable(doc, {
+            startY: 63,
+            head: [['N° Ticket', 'Fecha / Hora', 'Cliente', 'Platos', 'Cajero', 'Método de Pago', 'Total']],
+            body: filas,
+            foot: [[
+                '', '', '', '', '',
+                { content: 'TOTAL RECAUDADO:', styles: { fontStyle: 'bold', halign: 'right' } },
+                { content: `Bs. ${Number(stats.hoy).toFixed(2)}`, styles: { fontStyle: 'bold', textColor: [249, 115, 22] } },
+            ]],
+            theme: 'grid',
+            headStyles: {
+                fillColor: [30, 30, 40],
+                textColor: [249, 115, 22],
+                fontStyle: 'bold',
+                fontSize: 7.5,
+            },
+            footStyles: {
+                fillColor: [245, 245, 245],
+                textColor: [30, 30, 30],
+                fontSize: 8,
+            },
+            bodyStyles: { fontSize: 7, cellPadding: 2 },
+            alternateRowStyles: { fillColor: [252, 252, 252] },
+            columnStyles: {
+                0: { cellWidth: 16, fontStyle: 'bold', textColor: [249, 115, 22] },
+                1: { cellWidth: 26 },
+                2: { cellWidth: 24 },
+                3: { cellWidth: 'auto' },
+                4: { cellWidth: 22 },
+                5: { cellWidth: 32 },
+                6: { cellWidth: 22, halign: 'right', fontStyle: 'bold' },
+            },
+            didParseCell: (data) => {
+                if (data.section === 'body' && data.column.index === 5) {
+                    const txt = String(data.cell.raw || '');
+                    if (txt.startsWith('MIXTO')) {
+                        data.cell.styles.textColor = [161, 100, 0];
+                        data.cell.styles.fontStyle = 'bold';
+                    } else if (txt === 'EFECTIVO') {
+                        data.cell.styles.textColor = [16, 100, 70];
+                    } else {
+                        data.cell.styles.textColor = [30, 80, 180];
+                    }
+                }
+            },
+        });
+
+        // ── Firmas de auditoría ─────────────────────────────────────
+        const finalY = (doc.lastAutoTable?.finalY || 200) + 18;
+        if (finalY < 260) {
+            doc.setDrawColor(180, 180, 180);
+            doc.setLineWidth(0.3);
+            doc.line(14, finalY, 80, finalY);
+            doc.line(pageW / 2 + 4, finalY, pageW - 14, finalY);
+            doc.setTextColor(100, 100, 100);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7);
+            doc.text('Cajero(a) Responsable', 47, finalY + 4, { align: 'center' });
+            doc.text('Gerencia / Administración', pageW - 14 - 38, finalY + 4, { align: 'center' });
         }
 
-        const label = filtroActivo === 'hoy' ? 'Hoy' : filtroActivo === 'ayer' ? 'Ayer' : `${fechaInicio} al ${fechaFin}`;
-        const total = Number(stats.hoy || 0).toFixed(2);
-        const ef = Number(stats.totalEfectivo || 0).toFixed(2);
-        const qr = Number(stats.totalQR || 0).toFixed(2);
-        const tickets = stats.ventasTotales || stats.historial?.length || 0;
+        // ── Pie de página ───────────────────────────────────────────
+        const totalPages = doc.internal.getNumberOfPages();
+        for (let p = 1; p <= totalPages; p++) {
+            doc.setPage(p);
+            doc.setFontSize(7);
+            doc.setTextColor(160, 160, 160);
+            doc.text(`Página ${p} de ${totalPages}  |  POLLERÍA EL POLLÓN - Sistema POS`, pageW / 2, 290, { align: 'center' });
+        }
 
-        let msg = `🍗 *POLLERÍA EL POLLÓN - REPORTE DE VENTAS*\n`;
-        msg += `📅 *Período:* ${label}\n`;
-        msg += `💰 *Total Recaudado:* Bs. ${total}\n`;
-        msg += `💵 *Efectivo:* Bs. ${ef}\n`;
-        msg += `📱 *QR / Bancos:* Bs. ${qr}\n`;
-        msg += `🧾 *Tickets Emitidos:* ${tickets} pedidos\n`;
-        msg += `👤 *Generado por:* ${user?.nombre || 'Administración'}\n\n`;
-        msg += `_Reporte oficial emitido desde el Sistema POS El Pollón._`;
+        return doc;
+    };
 
-        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+    // ─── Descargar PDF ─────────────────────────────────────────────────────────
+    const handleDescargarPDF = () => {
+        try {
+            const doc = generarPDF();
+            const filename = `Reporte_ElPollon_${fechaInicio}${fechaFin !== fechaInicio ? '_al_' + fechaFin : ''}.pdf`;
+            doc.save(filename);
+            toast.success('PDF descargado correctamente');
+        } catch (err) {
+            console.error('Error al generar PDF:', err);
+            toast.error('Error al generar el PDF');
+        }
+    };
+
+    // ─── Enviar Reporte PDF por WhatsApp ───────────────────────────────────────
+    // Genera el PDF, lo descarga y abre WhatsApp con mensaje ejecutivo
+    const handleWhatsAppPDF = async () => {
+        const toastId = toast.loading('Generando PDF del reporte...');
+        try {
+            const doc = generarPDF();
+            const label = filtroActivo === 'hoy' ? `Hoy (${fechaInicio})` : filtroActivo === 'ayer' ? `Ayer (${fechaInicio})` : `${fechaInicio} al ${fechaFin}`;
+            const filename = `Reporte_ElPollon_${fechaInicio}${fechaFin !== fechaInicio ? '_al_' + fechaFin : ''}.pdf`;
+
+            // 1. Descargar el PDF automáticamente
+            doc.save(filename);
+            toast.dismiss(toastId);
+            toast.success('✅ PDF descargado — adjúntalo en WhatsApp', { duration: 5000 });
+
+            // 2. Esperar brevemente y abrir WhatsApp con el mensaje resumen
+            const total   = Number(stats.hoy || 0).toFixed(2);
+            const ef      = Number(stats.totalEfectivo || 0).toFixed(2);
+            const qr      = Number(stats.totalQR || 0).toFixed(2);
+            const tickets = stats.ventasTotales || stats.historial?.length || 0;
+
+            let msg = `🍗 *POLLERÍA EL POLLÓN — REPORTE OFICIAL*\n`;
+            msg += `📅 *Período:* ${label}\n`;
+            msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+            msg += `💰 *Total Recaudado:* Bs. ${total}\n`;
+            msg += `💵 *Efectivo:*        Bs. ${ef}\n`;
+            msg += `📱 *QR / Digital:*   Bs. ${qr}\n`;
+            msg += `🧾 *Tickets:*         ${tickets} pedidos\n`;
+            msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+            msg += `👤 Por: ${user?.nombre || 'Administración'}\n`;
+            msg += `📎 _Se adjunta el PDF con detalle completo._\n`;
+            msg += `_Sistema POS El Pollón_`;
+
+            setTimeout(() => {
+                window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+            }, 800);
+
+        } catch (err) {
+            toast.dismiss(toastId);
+            console.error('Error al generar PDF para WhatsApp:', err);
+            toast.error('Error al generar el PDF');
+        }
     };
 
     // Filtrar historial de ventas generales
@@ -285,19 +470,19 @@ export default function VentasGenerales() {
                     <button
                         onClick={handleWhatsAppPDF}
                         className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs flex items-center gap-2 transition-all cursor-pointer shadow-lg shadow-emerald-950/40 border border-emerald-400/30 active:scale-95"
-                        title="Genera el reporte PDF y lo envía al WhatsApp del dueño"
+                        title="Genera el PDF del reporte, lo descarga y abre WhatsApp para adjuntarlo"
                     >
                         <span className="text-base">📱</span>
                         <span>WhatsApp PDF</span>
                     </button>
 
                     <button
-                        onClick={handlePrintReport}
+                        onClick={handleDescargarPDF}
                         className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black text-xs flex items-center gap-2 transition-all cursor-pointer shadow-lg shadow-orange-950/40 border border-orange-400/30 active:scale-95"
-                        title="Imprimir reporte oficial en formato ejecutivo A4 o Guardar como PDF"
+                        title="Descargar reporte oficial en formato PDF"
                     >
-                        <span className="text-base">🖨️</span>
-                        <span>Imprimir / PDF</span>
+                        <span className="text-base">📄</span>
+                        <span>Descargar PDF</span>
                     </button>
 
                     <button
