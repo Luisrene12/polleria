@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useCarrito } from '../../context/CarritoContext';
 import { getProductos } from '../../services/productoService';
 import { getCategorias } from '../../services/categoriaService';
@@ -40,6 +40,8 @@ export default function NuevaVenta() {
   const [montoEfectivo, setMontoEfectivo] = useState(0);
   const [montoTarjeta, setMontoTarjeta] = useState(0);
   const [pagaCon, setPagaCon] = useState('');
+  const [procesandoVenta, setProcesandoVenta] = useState(false);
+  const procesandoRef = useRef(false);
   
   // Estados para control de caja registradora
   const [caja, setCaja] = useState(null);
@@ -183,20 +185,30 @@ export default function NuevaVenta() {
   }, [productos, searchTerm, selectedCategoria]);
 
   const handleRegistrarVenta = async () => {
+    // Protección estricta contra múltiples clics
+    if (procesandoRef.current || procesandoVenta) {
+      return;
+    }
+
     if (carrito.length === 0) {
       toast.error('La orden está vacía. Añade productos.');
       return;
     }
 
-    try {
-      if (metodoPago === 'mixto') {
-        const sumMixto = (Number(montoEfectivo) || 0) + (Number(montoTarjeta) || 0);
-        if (Math.abs(sumMixto - total) > 0.05) {
-          toast.error(`La suma de Efectivo (Bs. ${(Number(montoEfectivo) || 0).toFixed(2)}) y QR (Bs. ${(Number(montoTarjeta) || 0).toFixed(2)}) debe ser igual al Total (Bs. ${total.toFixed(2)})`);
-          return;
-        }
+    if (metodoPago === 'mixto') {
+      const sumMixto = (Number(montoEfectivo) || 0) + (Number(montoTarjeta) || 0);
+      if (Math.abs(sumMixto - total) > 0.05) {
+        toast.error(`La suma de Efectivo (Bs. ${(Number(montoEfectivo) || 0).toFixed(2)}) y QR (Bs. ${(Number(montoTarjeta) || 0).toFixed(2)}) debe ser igual al Total (Bs. ${total.toFixed(2)})`);
+        return;
       }
+    }
 
+    // Bloqueo inmediato sincrónico y de estado
+    procesandoRef.current = true;
+    setProcesandoVenta(true);
+    const toastId = toast.loading('Registrando e imprimiendo...');
+
+    try {
       const venta = {
         cliente: clienteNombre,
         direccion: deliveryDireccion,
@@ -212,20 +224,30 @@ export default function NuevaVenta() {
           nota: item.parte || ''
         }))
       };
+
       await registrarVenta(venta);
-      
-      setTimeout(() => {
-        window.print();
-        toast.success('¡Venta e impresión procesadas con éxito!');
-        limpiarCarrito();
-        setClienteNombre('Cliente Mostrador');
-        setDeliveryDireccion('');
-        setPagaCon('');
-      }, 300);
+      toast.dismiss(toastId);
+      toast.success('¡Venta registrada con éxito!');
+
+      // Imprimir solo una vez
+      window.print();
+
+      // Limpiar datos
+      limpiarCarrito();
+      setClienteNombre('Cliente Mostrador');
+      setDeliveryDireccion('');
+      setPagaCon('');
 
     } catch (error) {
+      toast.dismiss(toastId);
       const msg = error.response?.data?.message || 'Error al procesar la venta';
       toast.error(msg);
+    } finally {
+      // Dejar un pequeño margen antes de desbloquear para evitar dobles clics
+      setTimeout(() => {
+        procesandoRef.current = false;
+        setProcesandoVenta(false);
+      }, 800);
     }
   };
 
@@ -728,11 +750,11 @@ export default function NuevaVenta() {
                {/* Botón Naranja Gigante: IMPRIMIR Y COBRAR */}
                <button
                  onClick={handleRegistrarVenta}
-                 disabled={carrito.length === 0}
+                 disabled={carrito.length === 0 || procesandoVenta}
                  className="w-full bg-gradient-to-r from-orange-500 via-orange-500 to-amber-500 hover:brightness-110 text-white font-[950] text-sm uppercase py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-orange-500/30 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none active:scale-98"
                >
                  <span>🛒</span>
-                 <span>IMPRIMIR Y COBRAR</span>
+                 {procesandoVenta ? <span>PROCESANDO VENTA...</span> : <span>IMPRIMIR Y COBRAR</span>}
                </button>
             </div>
 
