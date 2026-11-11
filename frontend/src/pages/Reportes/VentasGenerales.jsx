@@ -183,156 +183,117 @@ export default function VentasGenerales() {
         }, 1200);
     };
 
-    // ─── Generador de PDF con jsPDF ────────────────────────────────────────────
-    const generarPDF = () => {
-        const label = filtroActivo === 'hoy'
-            ? `Hoy (${fechaInicio})`
-            : filtroActivo === 'ayer'
-            ? `Ayer (${fechaInicio})`
-            : `${fechaInicio} al ${fechaFin}`;
+    // ─── Helpers de formateo para el reporte ─────────────────────────────────
+    const extraerHora = (f) => {
+        if (!f) return '—';
+        if (f.includes(' ')) {
+            const parts = f.split(' ');
+            if (parts[1]) return parts[1].substring(0, 5);
+        }
+        if (f.includes('T')) {
+            const parts = f.split('T');
+            if (parts[1]) return parts[1].substring(0, 5);
+        }
+        return f;
+    };
 
+    const formatearMetodo = (v) => {
+        if (v.metodo_pago === 'mixto') {
+            const ef = Math.round(Number(v.monto_efectivo || 0));
+            const qr = Math.round(Number(v.monto_tarjeta || 0));
+            return `MIXTO (E:${ef}/Q:${qr})`;
+        }
+        if (v.metodo_pago === 'efectivo') {
+            return 'EFECTIVO';
+        }
+        if (v.metodo_pago === 'qr' || v.metodo_pago === 'tarjeta') {
+            return 'QR';
+        }
+        return (v.metodo_pago || 'EFECTIVO').toUpperCase();
+    };
+
+    // ─── Generador de PDF con jsPDF (Diseño Oficial de la Imagen) ──────────────
+    const generarPDF = () => {
         const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
         const pageW = doc.internal.pageSize.getWidth();
+
         const now = new Date();
-        const fechaEmision = now.toLocaleDateString('es-BO', { timeZone: 'America/La_Paz' });
-        const horaEmision  = now.toLocaleTimeString('es-BO', { timeZone: 'America/La_Paz', hour: '2-digit', minute: '2-digit' });
+        const fechaBol = now.toLocaleDateString('es-BO', { timeZone: 'America/La_Paz' });
+        const horaBol = now.toLocaleTimeString('es-BO', { timeZone: 'America/La_Paz', hour: '2-digit', minute: '2-digit' });
 
-        // ── Encabezado ─────────────────────────────────────────────
-        // Banda naranja superior
-        doc.setFillColor(249, 115, 22); // orange-500
-        doc.rect(0, 0, pageW, 22, 'F');
-
-        doc.setTextColor(255, 255, 255);
+        // 1. Título Centrado
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(16);
-        doc.text('POLLERÍA EL POLLÓN', pageW / 2, 10, { align: 'center' });
-        doc.setFontSize(9);
-        doc.text('REPORTE OFICIAL DE VENTAS & AUDITORÍA', pageW / 2, 17, { align: 'center' });
+        doc.setFontSize(18);
+        doc.setTextColor(0, 0, 0);
+        doc.text('POLLER\u00CDA "EL POLL\u00D3N"', pageW / 2, 22, { align: 'center' });
 
-        // Info de período y emisión
-        doc.setTextColor(50, 50, 50);
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8.5);
-        doc.text(`Período: ${label}`, 14, 29);
-        doc.text(`Generado por: ${user?.nombre || 'Administración'}`, 14, 34);
-        doc.text(`Emisión: ${fechaEmision}  ${horaEmision}`, pageW - 14, 29, { align: 'right' });
-        doc.text('Sistema POS El Pollón', pageW - 14, 34, { align: 'right' });
+        doc.setFontSize(13);
+        doc.text('REPORTE DETALLADO DE VENTAS DIARIAS', pageW / 2, 29, { align: 'center' });
 
-        // Línea separadora
-        doc.setDrawColor(249, 115, 22);
-        doc.setLineWidth(0.5);
-        doc.line(14, 37, pageW - 14, 37);
+        // 2. Fecha y Hora
+        doc.setFontSize(9.5);
+        doc.text(`Fecha: ${fechaBol} | Hora: ${horaBol} (Bolivia)`, 14, 40);
 
-        // ── Tarjetas KPI ────────────────────────────────────────────
-        const kpis = [
-            { label: 'TOTAL RECAUDADO', valor: `Bs. ${Number(stats.hoy).toFixed(2)}`, color: [249, 115, 22] },
-            { label: 'EFECTIVO',        valor: `Bs. ${Number(stats.totalEfectivo).toFixed(2)}`, color: [16, 185, 129] },
-            { label: 'QR / DIGITAL',   valor: `Bs. ${Number(stats.totalQR).toFixed(2)}`, color: [59, 130, 246] },
-            { label: 'TICKETS',         valor: `${stats.ventasTotales} pedidos`, color: [139, 92, 246] },
-        ];
-        const boxW = (pageW - 28 - 9) / 4;
-        kpis.forEach((k, i) => {
-            const x = 14 + i * (boxW + 3);
-            doc.setFillColor(...k.color);
-            doc.roundedRect(x, 41, boxW, 18, 2, 2, 'F');
-            doc.setTextColor(255, 255, 255);
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(7);
-            doc.text(k.label, x + boxW / 2, 47.5, { align: 'center' });
-            doc.setFontSize(10);
-            doc.text(k.valor, x + boxW / 2, 54, { align: 'center' });
-        });
+        // 3. Resumen de Caja
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.text('RESUMEN DE CAJA:', 14, 49);
+        const textWidth = doc.getTextWidth('RESUMEN DE CAJA:');
+        doc.setLineWidth(0.3);
+        doc.line(14, 50, 14 + textWidth, 50);
 
-        // ── Tabla de ventas ─────────────────────────────────────────
-        const filas = historialFiltrado.map(v => {
-            let metodoPago = '';
-            if (v.metodo_pago === 'mixto') {
-                metodoPago = `MIXTO\nEf: Bs.${Number(v.monto_efectivo||0).toFixed(2)}\nQR: Bs.${Number(v.monto_tarjeta||0).toFixed(2)}`;
-            } else if (v.metodo_pago === 'efectivo') {
-                metodoPago = 'EFECTIVO';
-            } else {
-                metodoPago = 'QR DIGITAL';
-            }
-            return [
-                `#${v.nota}`,
-                v.fecha || '—',
-                v.cliente || 'Mostrador',
-                (v.productos || '—').substring(0, 40),
-                v.vendedor || '—',
-                metodoPago,
-                `Bs. ${Number(v.total).toFixed(2)}`,
-            ];
-        });
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.text(`Total Ventas: Bs. ${Number(stats.hoy || 0).toFixed(2)}`, 14, 56);
+        doc.text(`Total Efectivo: Bs. ${Number(stats.totalEfectivo || 0).toFixed(2)}`, 14, 62);
+        doc.text(`Total QR: Bs. ${Number(stats.totalQR || 0).toFixed(2)}`, 14, 68);
+
+        // 4. Detalle de Ventas
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.text('DETALLE DE VENTAS', 14, 79);
+
+        // 5. Tabla de Ventas idéntica a la imagen
+        const filas = historialFiltrado.map(v => [
+            v.nota ? v.nota.toString() : '—',
+            extraerHora(v.fecha),
+            v.cliente || 'Cliente Mostrador',
+            formatearMetodo(v),
+            v.vendedor || 'Administrador',
+            `Bs. ${Number(v.total).toFixed(2)}`
+        ]);
 
         autoTable(doc, {
-            startY: 63,
-            head: [['N° Ticket', 'Fecha / Hora', 'Cliente', 'Platos', 'Cajero', 'Método de Pago', 'Total']],
+            startY: 83,
+            head: [['Ticket', 'Hora', 'Cliente', 'M\u00E9todo', 'Vendedor', 'Total']],
             body: filas,
-            foot: [[
-                '', '', '', '', '',
-                { content: 'TOTAL RECAUDADO:', styles: { fontStyle: 'bold', halign: 'right' } },
-                { content: `Bs. ${Number(stats.hoy).toFixed(2)}`, styles: { fontStyle: 'bold', textColor: [249, 115, 22] } },
-            ]],
-            theme: 'grid',
+            theme: 'plain',
             headStyles: {
-                fillColor: [30, 30, 40],
-                textColor: [249, 115, 22],
+                fillColor: [243, 244, 246],
+                textColor: [0, 0, 0],
                 fontStyle: 'bold',
-                fontSize: 7.5,
+                fontSize: 9,
+                lineColor: [229, 231, 235],
+                lineWidth: { top: 0.4, bottom: 0.4 },
+                cellPadding: 2.5
             },
-            footStyles: {
-                fillColor: [245, 245, 245],
-                textColor: [30, 30, 30],
-                fontSize: 8,
+            bodyStyles: {
+                textColor: [0, 0, 0],
+                fontSize: 9,
+                lineColor: [229, 231, 235],
+                lineWidth: { bottom: 0.3 },
+                cellPadding: 2.5
             },
-            bodyStyles: { fontSize: 7, cellPadding: 2 },
-            alternateRowStyles: { fillColor: [252, 252, 252] },
             columnStyles: {
-                0: { cellWidth: 16, fontStyle: 'bold', textColor: [249, 115, 22] },
-                1: { cellWidth: 26 },
-                2: { cellWidth: 24 },
-                3: { cellWidth: 'auto' },
-                4: { cellWidth: 22 },
-                5: { cellWidth: 32 },
-                6: { cellWidth: 22, halign: 'right', fontStyle: 'bold' },
-            },
-            didParseCell: (data) => {
-                if (data.section === 'body' && data.column.index === 5) {
-                    const txt = String(data.cell.raw || '');
-                    if (txt.startsWith('MIXTO')) {
-                        data.cell.styles.textColor = [161, 100, 0];
-                        data.cell.styles.fontStyle = 'bold';
-                    } else if (txt === 'EFECTIVO') {
-                        data.cell.styles.textColor = [16, 100, 70];
-                    } else {
-                        data.cell.styles.textColor = [30, 80, 180];
-                    }
-                }
-            },
+                0: { cellWidth: 20 },
+                1: { cellWidth: 22 },
+                2: { cellWidth: 55 },
+                3: { cellWidth: 42 },
+                4: { cellWidth: 35 },
+                5: { cellWidth: 20, halign: 'right' }
+            }
         });
-
-        // ── Firmas de auditoría ─────────────────────────────────────
-        const finalY = (doc.lastAutoTable?.finalY || 200) + 18;
-        if (finalY < 260) {
-            doc.setDrawColor(180, 180, 180);
-            doc.setLineWidth(0.3);
-            doc.line(14, finalY, 80, finalY);
-            doc.line(pageW / 2 + 4, finalY, pageW - 14, finalY);
-            doc.setTextColor(100, 100, 100);
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(7);
-            doc.text('Cajero(a) Responsable', 47, finalY + 4, { align: 'center' });
-            doc.text('Gerencia / Administración', pageW - 14 - 38, finalY + 4, { align: 'center' });
-        }
-
-        // ── Pie de página ───────────────────────────────────────────
-        const totalPages = doc.internal.getNumberOfPages();
-        for (let p = 1; p <= totalPages; p++) {
-            doc.setPage(p);
-            doc.setFontSize(7);
-            doc.setTextColor(160, 160, 160);
-            doc.text(`Página ${p} de ${totalPages}  |  POLLERÍA EL POLLÓN - Sistema POS`, pageW / 2, 290, { align: 'center' });
-        }
 
         return doc;
     };
@@ -956,110 +917,60 @@ export default function VentasGenerales() {
                 VISTA DEDICADA EXCLUSIVA PARA IMPRESIÓN Y GUARDADO EN PDF
                 Se activa únicamente al mandar a imprimir con window.print()
                ========================================================= */}
-            <div id="reporte-impresion" className="hidden text-black bg-white p-6 space-y-6">
-                {/* Cabecera Oficial */}
-                <div className="border-b-2 border-black pb-4 flex justify-between items-start">
-                    <div>
-                        <h1 className="text-2xl font-black uppercase tracking-tight text-black">
-                            POLLERÍA EL POLLÓN
-                        </h1>
-                        <p className="text-xs font-bold text-gray-700 tracking-wider uppercase">
-                            Reporte Oficial de Ventas & Auditoría de Caja
-                        </p>
-                        <p className="text-[11px] text-gray-600 mt-1">
-                            Período Auditado: <strong>{filtroActivo === 'hoy' ? `Hoy (${fechaInicio})` : filtroActivo === 'ayer' ? `Ayer (${fechaInicio})` : `${fechaInicio} al ${fechaFin}`}</strong>
-                        </p>
-                    </div>
-                    <div className="text-right text-[11px] text-gray-600">
-                        <p><strong>Fecha Emisión:</strong> {new Date().toLocaleDateString('es-ES')} {new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</p>
-                        <p><strong>Generado por:</strong> {user?.nombre || user?.username || 'Administrador'}</p>
-                        <p><strong>Estado:</strong> Oficial / Auditado</p>
-                    </div>
+            {/* VISTA DEDICADA EXCLUSIVA PARA IMPRESIÓN Y GUARDADO EN PDF (DISEÑO EXACTO A LA IMAGEN) */}
+            <div id="reporte-impresion" className="hidden text-black bg-white p-6 font-sans">
+                {/* 1. Título Centrado */}
+                <div className="text-center mb-5">
+                    <h1 className="text-xl font-bold uppercase tracking-tight text-black mb-1">
+                        POLLERÍA "EL POLLÓN"
+                    </h1>
+                    <p className="text-sm font-normal uppercase text-black">
+                        REPORTE DETALLADO DE VENTAS DIARIAS
+                    </p>
                 </div>
 
-                {/* Resumen Ejecutivo de Totales */}
-                <div className="grid grid-cols-4 gap-3">
-                    <div className="border border-black p-3 rounded-lg text-center">
-                        <p className="text-[10px] font-bold uppercase text-gray-700">Monto Total Recaudado</p>
-                        <h2 className="text-xl font-black text-black mt-0.5">Bs. {stats.hoy.toFixed(2)}</h2>
-                    </div>
-                    <div className="border border-black p-3 rounded-lg text-center">
-                        <p className="text-[10px] font-bold uppercase text-gray-700">Total Efectivo</p>
-                        <h2 className="text-xl font-black text-black mt-0.5">Bs. {stats.totalEfectivo.toFixed(2)}</h2>
-                    </div>
-                    <div className="border border-black p-3 rounded-lg text-center">
-                        <p className="text-[10px] font-bold uppercase text-gray-700">Total QR / Digital</p>
-                        <h2 className="text-xl font-black text-black mt-0.5">Bs. {stats.totalQR.toFixed(2)}</h2>
-                    </div>
-                    <div className="border border-black p-3 rounded-lg text-center">
-                        <p className="text-[10px] font-bold uppercase text-gray-700">Tickets Emitidos</p>
-                        <h2 className="text-xl font-black text-black mt-0.5">{stats.ventasTotales} pedidos</h2>
-                    </div>
+                {/* 2. Fecha y Hora */}
+                <div className="text-xs text-black mb-4">
+                    Fecha: {new Date().toLocaleDateString('es-BO', { timeZone: 'America/La_Paz' })} | Hora: {new Date().toLocaleTimeString('es-BO', { timeZone: 'America/La_Paz', hour: '2-digit', minute: '2-digit' })} (Bolivia)
                 </div>
 
-                {/* Tabla de Detalle para Impresión */}
+                {/* 3. Resumen de Caja */}
+                <div className="text-xs text-black mb-5 space-y-1">
+                    <p className="font-bold underline">RESUMEN DE CAJA:</p>
+                    <p>Total Ventas: Bs. {Number(stats.hoy || 0).toFixed(2)}</p>
+                    <p>Total Efectivo: Bs. {Number(stats.totalEfectivo || 0).toFixed(2)}</p>
+                    <p>Total QR: Bs. {Number(stats.totalQR || 0).toFixed(2)}</p>
+                </div>
+
+                {/* 4. Detalle de Ventas */}
                 <div>
-                    <h3 className="text-xs font-black uppercase tracking-wider mb-2 text-black">
-                        Detalle Completo de Tickets Emitidos
+                    <h3 className="text-xs font-bold uppercase text-black mb-1.5">
+                        DETALLE DE VENTAS
                     </h3>
-                    <table className="w-full text-left border-collapse border border-black text-[11px]">
+                    <table className="w-full text-left border-collapse text-xs">
                         <thead>
-                            <tr className="bg-gray-100 border-b border-black font-black uppercase text-[10px]">
-                                <th className="border-r border-black p-2 w-14">Ticket</th>
-                                <th className="border-r border-black p-2 w-28">Fecha / Hora</th>
-                                <th className="border-r border-black p-2">Cliente</th>
-                                <th className="border-r border-black p-2">Detalle de Platos</th>
-                                <th className="border-r border-black p-2 w-24">Cajero</th>
-                                <th className="border-r border-black p-2 w-48">Método de Pago</th>
-                                <th className="p-2 text-right w-20">Total</th>
+                            <tr className="bg-gray-100 border-y border-gray-300 font-bold text-black">
+                                <th className="p-2 w-16">Ticket</th>
+                                <th className="p-2 w-20">Hora</th>
+                                <th className="p-2">Cliente</th>
+                                <th className="p-2 w-44">Método</th>
+                                <th className="p-2 w-36">Vendedor</th>
+                                <th className="p-2 text-right w-24">Total</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-300">
+                        <tbody className="divide-y divide-gray-200">
                             {historialFiltrado.map(v => (
                                 <tr key={v.nota}>
-                                    <td className="border-r border-black p-1.5 font-bold">#{v.nota}</td>
-                                    <td className="border-r border-black p-1.5">{v.fecha}</td>
-                                    <td className="border-r border-black p-1.5 font-bold">{v.cliente || 'Mostrador'}</td>
-                                    <td className="border-r border-black p-1.5">{v.productos || '—'}</td>
-                                    <td className="border-r border-black p-1.5">{v.vendedor || '—'}</td>
-                                    <td className="border-r border-black p-1.5">
-                                        {v.metodo_pago === 'mixto' ? (
-                                            <div>
-                                                <strong>⚡ MIXTO:</strong> Ef: Bs. {Number(v.monto_efectivo || 0).toFixed(2)} | QR: Bs. {Number(v.monto_tarjeta || 0).toFixed(2)}
-                                            </div>
-                                        ) : v.metodo_pago === 'efectivo' ? (
-                                            '💵 EFECTIVO'
-                                        ) : (
-                                            '📱 QR DIGITAL'
-                                        )}
-                                    </td>
-                                    <td className="p-1.5 text-right font-black">
-                                        Bs. {Number(v.total).toFixed(2)}
-                                    </td>
+                                    <td className="p-2">{v.nota}</td>
+                                    <td className="p-2">{extraerHora(v.fecha)}</td>
+                                    <td className="p-2">{v.cliente || 'Cliente Mostrador'}</td>
+                                    <td className="p-2">{formatearMetodo(v)}</td>
+                                    <td className="p-2">{v.vendedor || 'Administrador'}</td>
+                                    <td className="p-2 text-right">Bs. {Number(v.total).toFixed(2)}</td>
                                 </tr>
                             ))}
                         </tbody>
-                        <tfoot>
-                            <tr className="border-t-2 border-black font-black bg-gray-100 text-xs">
-                                <td colSpan={6} className="p-2 text-right border-r border-black">TOTAL RECAUDADO EN ESTE REPORTE:</td>
-                                <td className="p-2 text-right">Bs. {stats.hoy.toFixed(2)}</td>
-                            </tr>
-                        </tfoot>
                     </table>
-                </div>
-
-                {/* Firmas de Auditoría */}
-                <div className="pt-12 grid grid-cols-2 gap-12 text-center text-xs">
-                    <div>
-                        <div className="border-t border-black w-48 mx-auto mb-1"></div>
-                        <p className="font-bold uppercase text-black">Cajero(a) Responsable</p>
-                        <p className="text-[10px] text-gray-500">Firma y Sello de Turno</p>
-                    </div>
-                    <div>
-                        <div className="border-t border-black w-48 mx-auto mb-1"></div>
-                        <p className="font-bold uppercase text-black">Gerencia / Administración</p>
-                        <p className="text-[10px] text-gray-500">Conformidad y Visto Bueno</p>
-                    </div>
                 </div>
             </div>
 
