@@ -50,8 +50,8 @@ export default function WhatsAppConfig() {
       }
     });
 
-    // Poll cada 1.5 segundos para detectar el QR instantáneamente
-    const interval = setInterval(fetchStatus, 1500);
+    // Poll cada 1 segundo para actualizar y detectar el QR al instante
+    const interval = setInterval(fetchStatus, 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -83,15 +83,19 @@ export default function WhatsAppConfig() {
   };
 
   const handleLogout = async () => {
-    if (!window.confirm('¿Deseas cerrar la sesión de WhatsApp del sistema? Tendrás que escanear un nuevo QR.')) return;
+    if (!window.confirm('¿Deseas desvincular este WhatsApp para conectar otro número?')) return;
     setLoadingAction(true);
-    const toastId = toast.loading('Cerrando sesión de WhatsApp...');
+    // Cambiar vista de inmediato para que aparezca la pantalla de carga del QR
+    setStatus({ ready: false, state: 'ESPERANDO_QR', qr: null, pushname: null });
+    const toastId = toast.loading('Desvinculando y generando nuevo QR...');
     try {
       await logoutWhatsApp();
-      toast.success('Sesión cerrada. Esperando nuevo QR...', { id: toastId });
-      setTimeout(fetchStatus, 2000);
+      toast.success('✅ Desvinculado. Escanea el nuevo código QR con tu otro celular', { id: toastId });
+      setTimeout(fetchStatus, 300);
+      setTimeout(fetchStatus, 800);
+      setTimeout(fetchStatus, 1500);
     } catch (err) {
-      toast.error('Error al cerrar sesión', { id: toastId });
+      toast.error('Error al desvincular', { id: toastId });
     } finally {
       setLoadingAction(false);
     }

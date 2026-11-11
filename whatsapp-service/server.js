@@ -213,17 +213,25 @@ app.post('/send-text', async (req, res) => {
   }
 });
 
-// 4. Desconectar y borrar sesión para generar un nuevo QR
+// 4. Desconectar y borrar sesión para generar un nuevo QR de inmediato
 app.post('/logout', async (req, res) => {
-  try {
-    if (sock) {
-      await sock.logout().catch(() => {});
+  console.log('🔌 [WHATSAPP-BOT] Desvinculación solicitada. Limpiando para nuevo teléfono...');
+  
+  if (sock) {
+    try {
       sock.ev.removeAllListeners();
-    }
-  } catch (e) {}
+      sock.end();
+    } catch (e) {}
+    sock = null;
+  }
 
   try {
-    fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+    if (fs.existsSync(AUTH_DIR)) {
+      const files = fs.readdirSync(AUTH_DIR);
+      for (const f of files) {
+        try { fs.unlinkSync(path.join(AUTH_DIR, f)); } catch (e) {}
+      }
+    }
   } catch (e) {}
 
   isConnected = false;
@@ -232,20 +240,36 @@ app.post('/logout', async (req, res) => {
   userInfo = null;
   isStarting = false;
 
-  setTimeout(initWhatsApp, 500);
+  // Iniciar nuevo socket limpio inmediatamente
+  setTimeout(initWhatsApp, 200);
 
-  res.json({ success: true, message: 'Sesión cerrada correctamente. Generando nuevo QR...' });
+  res.json({ success: true, message: 'Desvinculado con éxito. Generando nuevo código QR...' });
 });
 
 // 5. Reiniciar conexión o regenerar QR inmediato
 app.post('/restart', (req, res) => {
+  console.log('🔄 [WHATSAPP-BOT] Reinicio forzado de QR...');
+  if (sock) {
+    try {
+      sock.ev.removeAllListeners();
+      sock.end();
+    } catch (e) {}
+    sock = null;
+  }
+
   try {
-    fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+    if (fs.existsSync(AUTH_DIR)) {
+      const files = fs.readdirSync(AUTH_DIR);
+      for (const f of files) {
+        try { fs.unlinkSync(path.join(AUTH_DIR, f)); } catch (e) {}
+      }
+    }
   } catch (e) {}
+
   currentQR = null;
   isConnected = false;
   isStarting = false;
-  setTimeout(initWhatsApp, 500);
+  setTimeout(initWhatsApp, 200);
   res.json({ success: true, message: 'Servicio reiniciado, nuevo QR listo' });
 });
 
