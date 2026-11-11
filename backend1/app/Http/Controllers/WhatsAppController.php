@@ -19,18 +19,25 @@ class WhatsAppController extends Controller
     public function getConfig(Request $request)
     {
         $user = $request->user();
-        $negocioId = $user->negocio_id;
+        $negocioId = $user ? ($user->negocio_id ?? 1) : 1;
 
         $config = ConfiguracionNegocio::where('negocio_id', $negocioId)
             ->where('clave', 'whatsapp_settings')
             ->first();
 
         $datos = $config ? json_decode($config->valor, true) : [
-            'telefono'           => '',
-            'notificar_ventas'   => false,
-            'notificar_cierre'   => false,
-            'reporte_diario'     => false,
+            'telefono'           => '63583775',
+            'codigo_pais'        => '591',
+            'destinatario'       => 'Dueño / Administración',
+            'notificar_ventas'   => true,
+            'notificar_cierre'   => true,
+            'reporte_diario'     => true,
         ];
+
+        // Asegurar campos por defecto si faltan en el JSON
+        if (!isset($datos['codigo_pais']))   $datos['codigo_pais'] = '591';
+        if (!isset($datos['telefono']))      $datos['telefono'] = '63583775';
+        if (!isset($datos['destinatario']))  $datos['destinatario'] = 'Dueño / Administración';
 
         return response()->json([
             'success' => true,
@@ -44,10 +51,12 @@ class WhatsAppController extends Controller
     public function saveConfig(Request $request)
     {
         $user = $request->user();
-        $negocioId = $user->negocio_id;
+        $negocioId = $user ? ($user->negocio_id ?? 1) : 1;
 
         $validated = $request->validate([
             'telefono'         => ['nullable', 'string', 'max:30'],
+            'codigo_pais'      => ['nullable', 'string', 'max:10'],
+            'destinatario'     => ['nullable', 'string', 'max:100'],
             'notificar_ventas' => ['nullable', 'boolean'],
             'notificar_cierre' => ['nullable', 'boolean'],
             'reporte_diario'   => ['nullable', 'boolean'],
@@ -81,29 +90,52 @@ class WhatsAppController extends Controller
     public function sendTestNotification(Request $request)
     {
         $user = $request->user();
+        $negocioId = $user ? ($user->negocio_id ?? 1) : 1;
 
-        $validated = $request->validate([
-            'telefono' => ['nullable', 'string', 'max:30'],
-            'mensaje'  => ['nullable', 'string', 'max:250'],
-        ]);
+        $config = ConfiguracionNegocio::where('negocio_id', $negocioId)
+            ->where('clave', 'whatsapp_settings')
+            ->first();
+        $datos = $config ? json_decode($config->valor, true) : null;
+        $telefono = $datos['telefono'] ?? '63583775';
+        $codigoPais = $datos['codigo_pais'] ?? '591';
 
-        Log::info("WhatsApp prueba enviada por usuario {$user->id} del negocio {$user->negocio_id}");
+        Log::info("WhatsApp prueba solicitada por usuario {$user->id} del negocio {$negocioId}");
 
         return response()->json([
-            'success' => true,
-            'message' => 'Notificación de prueba enviada satisfactoriamente (Modo simulado / Sandbox)',
+            'success'  => true,
+            'message'  => 'Prueba preparada para envío directo a WhatsApp',
+            'telefono' => $telefono,
+            'codigo_pais' => $codigoPais,
         ]);
     }
 
-    public function getStatus()
+    public function getStatus(Request $request)
     {
+        $user = $request->user();
+        $negocioId = $user ? ($user->negocio_id ?? 1) : 1;
+
+        $config = ConfiguracionNegocio::where('negocio_id', $negocioId)
+            ->where('clave', 'whatsapp_settings')
+            ->first();
+
+        $datos = $config ? json_decode($config->valor, true) : null;
+        $telefono = $datos['telefono'] ?? '63583775';
+        $codigoPais = $datos['codigo_pais'] ?? '591';
+        $destinatario = $datos['destinatario'] ?? 'Dueño / Administración';
+
+        $digits = preg_replace('/\D/', '', $telefono);
+        $completo = str_starts_with($digits, $codigoPais) ? $digits : ($codigoPais . $digits);
+
         return response()->json([
-            'ready'    => false,
-            'state'    => 'DESCONECTADO',
-            'pushname' => null,
-            'platform' => null,
-            'message'  => 'Servicio WhatsApp en Laravel listo para integración',
-            'qr'       => null
+            'ready'             => !empty($telefono),
+            'state'             => !empty($telefono) ? 'CONECTADO_DIRECTO' : 'DESCONECTADO',
+            'pushname'          => $destinatario,
+            'telefono'          => $telefono,
+            'codigo_pais'       => $codigoPais,
+            'telefono_completo' => $completo,
+            'platform'          => 'WhatsApp Direct (Reportes con 1 Clic)',
+            'message'           => !empty($telefono) ? "Listo para enviar reportes a +{$completo}" : 'Ingresa un número para activar envíos',
+            'qr'                => null
         ]);
     }
 

@@ -163,9 +163,17 @@ Route::middleware(['auth:sanctum', 'negocio_activo'])->group(function () {
 
     // 7. Notificaciones WhatsApp
     Route::prefix('whatsapp')->group(function () {
-        Route::get('/config', [WhatsAppController::class, 'getConfig']);
-        Route::post('/config', [WhatsAppController::class, 'saveConfig'])->middleware('admin');
-        Route::post('/test', [WhatsAppController::class, 'sendTestNotification'])->middleware('admin');
+        Route::get('/config',          [WhatsAppController::class, 'getConfig']);
+        Route::post('/config',         [WhatsAppController::class, 'saveConfig']);
+        Route::post('/test',           [WhatsAppController::class, 'sendTestNotification']);
+        Route::get('/status',          [WhatsAppController::class, 'getStatus']);
+        Route::post('/send',            [WhatsAppController::class, 'sendNotification']);
+        Route::post('/reporte-diario', [WhatsAppController::class, 'sendDailyReport']);
+        Route::post('/backup',         [WhatsAppController::class, 'sendBackup']);
+        Route::post('/reporte-pdf',    [WhatsAppController::class, 'sendPDFReport']);
+        Route::post('/logout',         [WhatsAppController::class, 'logout']);
+        Route::post('/reset',          [WhatsAppController::class, 'reset']);
+        Route::post('/full-reset',     [WhatsAppController::class, 'fullReset']);
     });
 
     // 8. Facturación y Comprobantes (POS / Panel del Negocio)

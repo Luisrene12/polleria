@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { getDashboardData, getVentasPorProducto, getVentasPorCajero } from '../../services/reporteService';
 import { eliminarVenta, editarVenta } from '../../services/ventaService';
 import { useAuth } from '../../context/AuthContext';
+import { getWhatsAppConfig, formatWhatsAppNumber } from '../../services/whatsappService';
 import { toast } from 'react-hot-toast';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -312,7 +313,7 @@ export default function VentasGenerales() {
     };
 
     // ─── Enviar Reporte PDF por WhatsApp ───────────────────────────────────────
-    // Genera el PDF, lo descarga y abre WhatsApp con mensaje ejecutivo
+    // Genera el PDF, lo descarga y abre WhatsApp directamente con el número configurado
     const handleWhatsAppPDF = async () => {
         const toastId = toast.loading('Generando PDF del reporte...');
         try {
@@ -323,9 +324,23 @@ export default function VentasGenerales() {
             // 1. Descargar el PDF automáticamente
             doc.save(filename);
             toast.dismiss(toastId);
-            toast.success('✅ PDF descargado — adjúntalo en WhatsApp', { duration: 5000 });
+            toast.success('✅ PDF descargado — adjúntalo en el chat de WhatsApp', { duration: 5000 });
 
-            // 2. Esperar brevemente y abrir WhatsApp con el mensaje resumen
+            // 2. Obtener teléfono configurado para WhatsApp
+            let targetPhone = '63583775';
+            let targetCode = '591';
+            try {
+                const cfg = await getWhatsAppConfig();
+                if (cfg && cfg.telefono) {
+                    targetPhone = cfg.telefono;
+                    if (cfg.codigo_pais) targetCode = cfg.codigo_pais;
+                }
+            } catch (e) {
+                console.warn('Usando teléfono por defecto:', e);
+            }
+            const cleanPhone = formatWhatsAppNumber(targetPhone, targetCode);
+
+            // 3. Preparar mensaje ejecutivo
             const total   = Number(stats.hoy || 0).toFixed(2);
             const ef      = Number(stats.totalEfectivo || 0).toFixed(2);
             const qr      = Number(stats.totalQR || 0).toFixed(2);
@@ -343,8 +358,12 @@ export default function VentasGenerales() {
             msg += `📎 _Se adjunta el PDF con detalle completo._\n`;
             msg += `_Sistema POS El Pollón_`;
 
+            // 4. Abrir WhatsApp DIRECTAMENTE al número configurado
             setTimeout(() => {
-                window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+                const url = cleanPhone
+                    ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(msg)}`
+                    : `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+                window.open(url, '_blank');
             }, 800);
 
         } catch (err) {
