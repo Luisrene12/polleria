@@ -390,7 +390,7 @@ export default function NuevaVenta() {
                           {/* Discount Tag (Top Right) */}
                           {tieneDescuento && (
                             <div className="absolute top-2.5 right-2.5 bg-rose-600 text-white text-[9px] font-black px-2 py-0.5 rounded shadow z-10">
-                              -{p.descuento}% OFF
+                              -Bs. {Number(p.descuento).toFixed(2)}
                             </div>
                           )}
 
@@ -408,9 +408,20 @@ export default function NuevaVenta() {
                           <div className="mt-2.5">
                             {/* Price & Stock Row */}
                             <div className="flex items-center justify-between mb-2.5">
-                              <span className="text-amber-400 font-[950] text-base sm:text-lg tracking-tight leading-none">
-                                Bs. {Number(p.precio_venta).toFixed(2)}
-                              </span>
+                              {tieneDescuento ? (
+                                <div className="flex flex-col leading-none">
+                                  <span className="text-emerald-400 font-[950] text-base sm:text-lg tracking-tight">
+                                    Bs. {Math.max(0, Number(p.precio_venta) - Number(p.descuento)).toFixed(2)}
+                                  </span>
+                                  <span className="text-zinc-500 line-through text-[10px] font-semibold mt-0.5">
+                                    Bs. {Number(p.precio_venta).toFixed(2)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-amber-400 font-[950] text-base sm:text-lg tracking-tight leading-none">
+                                  Bs. {Number(p.precio_venta).toFixed(2)}
+                                </span>
+                              )}
                               <span className="bg-[#242934] text-zinc-300 font-bold text-[10px] px-2 py-0.5 rounded-md border border-[#2e3442]">
                                 Stock: {p.stock}
                               </span>

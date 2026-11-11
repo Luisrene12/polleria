@@ -462,11 +462,27 @@ export default function ProductosAdmin() {
                       </span>
                     </td>
 
-                    {/* PRECIO VENTA: Amarillo brillante grande */}
+                    {/* PRECIO VENTA: Amarillo brillante grande o Verde con Descuento */}
                     <td className="py-2 px-4">
-                      <span className="font-[950] text-amber-400 text-sm sm:text-base tracking-tight">
-                        Bs. {Number(p.precio_venta).toFixed(2)}
-                      </span>
+                      {Number(p.descuento) > 0 ? (
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-[950] text-emerald-400 text-sm sm:text-base tracking-tight">
+                              Bs. {Math.max(0, Number(p.precio_venta) - Number(p.descuento)).toFixed(2)}
+                            </span>
+                            <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-emerald-950/80 text-emerald-400 border border-emerald-500/30">
+                              -Bs. {Number(p.descuento).toFixed(2)}
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-zinc-500 line-through font-semibold">
+                            Bs. {Number(p.precio_venta).toFixed(2)}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="font-[950] text-amber-400 text-sm sm:text-base tracking-tight">
+                          Bs. {Number(p.precio_venta).toFixed(2)}
+                        </span>
+                      )}
                     </td>
 
                     {/* STOCK: Caja 3D Verde Esmeralda */}
@@ -618,6 +634,23 @@ export default function ProductosAdmin() {
 
                 <div>
                   <label className="text-xs font-black text-amber-400 uppercase tracking-widest ml-3 mb-1 block">
+                    Stock Disponible *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="Ej: 50"
+                    value={formData.stock}
+                    onChange={e => setFormData({ ...formData, stock: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-[#191e2b] border border-[#2b354a] focus:border-orange-500 rounded-full outline-none font-bold text-sm text-white placeholder-zinc-500 transition-all shadow-inner"
+                  />
+                </div>
+              </div>
+
+              {/* Fila de Precios y Descuentos */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-black text-amber-400 uppercase tracking-widest ml-3 mb-1 block">
                     Precio Venta (Bs.) *
                   </label>
                   <input
@@ -630,35 +663,39 @@ export default function ProductosAdmin() {
                     className="w-full px-4 py-2.5 bg-[#191e2b] border border-[#2b354a] focus:border-orange-500 rounded-full outline-none font-black text-sm text-amber-400 placeholder-zinc-500 transition-all shadow-inner"
                   />
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-black text-amber-400 uppercase tracking-widest ml-3 mb-1 block">
-                    Stock Disponible *
+                  <label className="text-xs font-black text-emerald-400 uppercase tracking-widest ml-3 mb-1 flex items-center justify-between">
+                    <span>Descuento / Promo (Bs.)</span>
+                    {Number(formData.descuento) > 0 && Number(formData.precio_venta) > 0 && (
+                      <span className="text-[10px] text-zinc-300 font-bold lowercase">
+                        Final: <b className="text-emerald-400 font-black">Bs. {Math.max(0, Number(formData.precio_venta) - Number(formData.descuento)).toFixed(2)}</b>
+                      </span>
+                    )}
                   </label>
                   <input
                     type="number"
-                    required
-                    placeholder="Ej: 50"
-                    value={formData.stock}
-                    onChange={e => setFormData({ ...formData, stock: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-[#191e2b] border border-[#2b354a] focus:border-orange-500 rounded-full outline-none font-bold text-sm text-white placeholder-zinc-500 transition-all shadow-inner"
+                    step="0.5"
+                    min="0"
+                    placeholder="Ej: 2.00 (Opcional)"
+                    value={formData.descuento}
+                    onChange={e => setFormData({ ...formData, descuento: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-[#191e2b] border border-[#2b354a] focus:border-emerald-500 rounded-full outline-none font-black text-sm text-emerald-400 placeholder-zinc-500 transition-all shadow-inner"
                   />
                 </div>
+              </div>
 
-                <div>
-                  <label className="text-xs font-black text-amber-400 uppercase tracking-widest ml-3 mb-1 block">
-                    URL Imagen (Opcional)
-                  </label>
-                  <input
-                    type="url"
-                    placeholder="https://..."
-                    value={formData.imagen}
-                    onChange={e => setFormData({ ...formData, imagen: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-[#191e2b] border border-[#2b354a] focus:border-orange-500 rounded-full outline-none font-medium text-xs text-white placeholder-zinc-500 transition-all shadow-inner"
-                  />
-                </div>
+              <div>
+                <label className="text-xs font-black text-amber-400 uppercase tracking-widest ml-3 mb-1 block">
+                  URL Imagen (Opcional)
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://..."
+                  value={formData.imagen}
+                  onChange={e => setFormData({ ...formData, imagen: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-[#191e2b] border border-[#2b354a] focus:border-orange-500 rounded-full outline-none font-medium text-xs text-white placeholder-zinc-500 transition-all shadow-inner"
+                />
               </div>
 
               <div>
