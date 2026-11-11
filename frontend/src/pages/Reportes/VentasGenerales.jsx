@@ -782,7 +782,7 @@ export default function VentasGenerales() {
                                                         title="Ver Detalle de Pedidos y Ticket"
                                                     >
                                                         <span>🧾</span>
-                                                        <span>Ticket</span>
+                                                        <span>Detalles</span>
                                                     </button>
                                                     {esAdmin && (
                                                         <>
