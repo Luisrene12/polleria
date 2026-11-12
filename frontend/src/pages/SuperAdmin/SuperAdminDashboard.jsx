@@ -33,11 +33,14 @@ import {
   resetPasswordUsuario,
   toggleUsuarioActivo,
   getTickets,
+  createTicket,
   getTicketById,
   responderTicket,
   updateEstadoTicket,
   getAuditoria,
-  getNotificaciones
+  getNotificaciones,
+  enviarNotificacionBroadcast,
+  deleteNotificacion,
 } from '../../services/superAdminService';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -127,6 +130,33 @@ export default function SuperAdminDashboard() {
   const [filtroTickets, setFiltroTickets] = useState('');
   const [filtroUsuarios, setFiltroUsuarios] = useState({ search: '', rol: '', tipo: 'todos', activo: '' });
 
+  // Soporte & Notificaciones (FASE 7)
+  const [subTabSoporte, setSubTabSoporte] = useState('tickets'); // 'tickets' | 'notificaciones'
+  const [filtroTicketsObj, setFiltroTicketsObj] = useState({ estado: 'todos', prioridad: 'todos', categoria: 'todos', search: '' });
+  const [showModalCrearTicket, setShowModalCrearTicket] = useState(false);
+  const [formNuevoTicket, setFormNuevoTicket] = useState({
+    negocio_id: '',
+    asunto: '',
+    categoria: 'tecnico',
+    prioridad: 'media',
+    mensaje: '',
+    asignado_a: '',
+  });
+  const [respuestaTicketAdjunto, setRespuestaTicketAdjunto] = useState('');
+  const [respuestaTicketEstado, setRespuestaTicketEstado] = useState('en_proceso');
+
+  const [notificacionesList, setNotificacionesList] = useState([]);
+  const [filtroNotifTipo, setFiltroNotifTipo] = useState('todos');
+  const [showModalBroadcast, setShowModalBroadcast] = useState(false);
+  const [formBroadcast, setFormBroadcast] = useState({
+    destino: 'todos',
+    negocio_id: '',
+    plan_id: '',
+    tipo: 'comunicado',
+    titulo: '',
+    mensaje: '',
+  });
+
   // Modales & Formularios Usuarios
   const [showModalUsuario, setShowModalUsuario] = useState(false);
   const [editandoUsuario, setEditandoUsuario] = useState(null);
@@ -214,8 +244,12 @@ export default function SuperAdminDashboard() {
           const negs = await getNegocios();
           setNegocios(negs);
         } else if (activeTab === 'soporte') {
-          const res = await getTickets(filtroTickets ? { estado: filtroTickets } : {});
+          const res = await getTickets(filtroTicketsObj);
           setTickets(res);
+          const notifs = await getNotificaciones({ tipo: filtroNotifTipo });
+          setNotificacionesList(notifs);
+          const negs = await getNegocios();
+          setNegocios(negs);
         } else if (activeTab === 'facturacion') {
           const res = await getBillingConfigAll();
           setBillingList(Array.isArray(res) ? res : []);
@@ -231,7 +265,7 @@ export default function SuperAdminDashboard() {
     };
 
     fetchTabData();
-  }, [activeTab, filtroNegocios, filtroSuscripciones, filtroPagos, filtroTickets, filtroUsuarios]);
+  }, [activeTab, filtroNegocios, filtroSuscripciones, filtroPagos, filtroTickets, filtroUsuarios, filtroTicketsObj, filtroNotifTipo]);
 
   // Verificar subdominio al escribir con debounce
   useEffect(() => {
@@ -672,9 +706,33 @@ export default function SuperAdminDashboard() {
     try {
       const res = await getTicketById(id);
       setTicketSeleccionado(res);
+      setRespuestaTicketEstado(res.estado);
+      setRespuestaTicket('');
+      setRespuestaTicketAdjunto('');
       setShowModalTicket(true);
     } catch (err) {
       toast.error('Error al cargar ticket');
+    }
+  };
+
+  const handleCrearTicket = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await createTicket(formNuevoTicket);
+      toast.success(res.message);
+      setShowModalCrearTicket(false);
+      setFormNuevoTicket({
+        negocio_id: '',
+        asunto: '',
+        categoria: 'tecnico',
+        prioridad: 'media',
+        mensaje: '',
+        asignado_a: '',
+      });
+      const updated = await getTickets(filtroTicketsObj);
+      setTickets(updated);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Error al crear ticket');
     }
   };
 
@@ -682,15 +740,67 @@ export default function SuperAdminDashboard() {
     e.preventDefault();
     if (!respuestaTicket.trim()) return;
     try {
-      await responderTicket(ticketSeleccionado.id, respuestaTicket);
-      toast.success('Respuesta enviada con éxito');
+      await responderTicket(ticketSeleccionado.id, {
+        mensaje: respuestaTicket,
+        adjunto_url: respuestaTicketAdjunto || null,
+        nuevo_estado: respuestaTicketEstado,
+      });
+      toast.success('Respuesta y estado actualizados con éxito');
       setRespuestaTicket('');
+      setRespuestaTicketAdjunto('');
       const updated = await getTicketById(ticketSeleccionado.id);
       setTicketSeleccionado(updated);
-      const updatedTickets = await getTickets();
+      const updatedTickets = await getTickets(filtroTicketsObj);
       setTickets(updatedTickets);
     } catch (err) {
       toast.error('Error al responder ticket');
+    }
+  };
+
+  const handleActualizarEstadoTicket = async (id, nuevoEstado) => {
+    try {
+      const res = await updateEstadoTicket(id, { estado: nuevoEstado });
+      toast.success(res.message);
+      const updatedTickets = await getTickets(filtroTicketsObj);
+      setTickets(updatedTickets);
+      if (ticketSeleccionado && ticketSeleccionado.id === id) {
+        setTicketSeleccionado({ ...ticketSeleccionado, estado: nuevoEstado });
+      }
+    } catch (err) {
+      toast.error('Error al actualizar estado del ticket');
+    }
+  };
+
+  const handleEmitirBroadcast = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await enviarNotificacionBroadcast(formBroadcast);
+      toast.success(res.message);
+      setShowModalBroadcast(false);
+      setFormBroadcast({
+        destino: 'todos',
+        negocio_id: '',
+        plan_id: '',
+        tipo: 'comunicado',
+        titulo: '',
+        mensaje: '',
+      });
+      const notifs = await getNotificaciones({ tipo: filtroNotifTipo });
+      setNotificacionesList(notifs);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Error al emitir comunicado');
+    }
+  };
+
+  const handleEliminarNotificacion = async (id) => {
+    if (!confirm('¿Eliminar esta notificación del historial?')) return;
+    try {
+      const res = await deleteNotificacion(id);
+      toast.success(res.message);
+      const notifs = await getNotificaciones({ tipo: filtroNotifTipo });
+      setNotificacionesList(notifs);
+    } catch (err) {
+      toast.error('Error al eliminar notificación');
     }
   };
 
@@ -2144,67 +2254,379 @@ export default function SuperAdminDashboard() {
             </div>
           )}
 
-          {/* TAB 9: SOPORTE TÉCNICO */}
+          {/* TAB 9: SOPORTE TÉCNICO & CENTRO DE NOTIFICACIONES (FASE 7) */}
           {activeTab === 'soporte' && (
             <div className="space-y-6">
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider border-b border-slate-800">
-                    <tr>
-                      <th className="py-4 px-6">Ticket #</th>
-                      <th className="py-4 px-6">Restaurante & Solicitante</th>
-                      <th className="py-4 px-6">Asunto</th>
-                      <th className="py-4 px-6">Prioridad</th>
-                      <th className="py-4 px-6">Estado</th>
-                      <th className="py-4 px-6 text-right">Acción</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800 text-slate-200">
-                    {tickets.length === 0 ? (
-                      <tr>
-                        <td colSpan="6" className="py-8 text-center text-slate-500">
-                          🎉 No hay tickets de soporte pendientes en este momento.
-                        </td>
-                      </tr>
-                    ) : (
-                      tickets.map(t => (
-                        <tr key={t.id} className="hover:bg-slate-800/40">
-                          <td className="py-4 px-6 font-mono font-bold text-orange-400">#{t.id}</td>
-                          <td className="py-4 px-6">
-                            <div className="font-bold text-white">{t.negocio?.nombre_comercial}</div>
-                            <div className="text-[11px] text-slate-400">{t.usuario?.nombre}</div>
-                          </td>
-                          <td className="py-4 px-6 font-semibold text-slate-200">{t.asunto}</td>
-                          <td className="py-4 px-6">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                              t.prioridad === 'urgente' ? 'bg-red-500/20 text-red-400' :
-                              t.prioridad === 'alta' ? 'bg-orange-500/20 text-orange-400' : 'bg-slate-800 text-slate-300'
-                            }`}>
-                              {t.prioridad}
-                            </span>
-                          </td>
-                          <td className="py-4 px-6">
-                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
-                              t.estado === 'abierto' ? 'bg-amber-500/20 text-amber-400' :
-                              t.estado === 'en_proceso' ? 'bg-blue-500/20 text-blue-400' : 'bg-emerald-500/20 text-emerald-400'
-                            }`}>
-                              {t.estado.replace('_', ' ')}
-                            </span>
-                          </td>
-                          <td className="py-4 px-6 text-right">
-                            <button
-                              onClick={() => handleAbrirTicket(t.id)}
-                              className="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-bold text-xs transition-all"
-                            >
-                              💬 Atender
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+              {/* Header & Subtab Switcher */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  <h2 className="text-xl font-black text-white flex items-center gap-2">
+                    <span>🎧</span> Centro de Soporte Técnico & Comunicaciones
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Mesa de ayuda para restaurantes, tickets de incidencias y anuncios broadcast
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2.5">
+                  <div className="bg-slate-900 border border-slate-800 p-1 rounded-xl flex items-center gap-1 shadow-inner">
+                    <button
+                      onClick={() => setSubTabSoporte('tickets')}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        subTabSoporte === 'tickets'
+                          ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-md shadow-orange-500/20'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span>🎫 Tickets</span>
+                      <span className="px-1.5 py-0.2 bg-black/30 rounded-full text-[10px]">
+                        {tickets.filter(t => !['resuelto', 'cerrado'].includes(t.estado)).length}
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => setSubTabSoporte('notificaciones')}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        subTabSoporte === 'notificaciones'
+                          ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-md shadow-orange-500/20'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span>📢 Broadcast & Avisos</span>
+                      <span className="px-1.5 py-0.2 bg-black/30 rounded-full text-[10px]">
+                        {notificacionesList.length}
+                      </span>
+                    </button>
+                  </div>
+
+                  {subTabSoporte === 'tickets' ? (
+                    <button
+                      onClick={() => setShowModalCrearTicket(true)}
+                      className="px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-600 hover:brightness-110 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-orange-500/30 transition-all cursor-pointer"
+                    >
+                      <span>＋</span>
+                      <span>Abrir Ticket</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setShowModalBroadcast(true)}
+                      className="px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-600 hover:brightness-110 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-orange-500/30 transition-all cursor-pointer"
+                    >
+                      <span>📣</span>
+                      <span>Emitir Comunicado</span>
+                    </button>
+                  )}
+                </div>
               </div>
+
+              {/* ──────────────────────────────────────────────────────────
+                  SUB-TAB 1: GESTIÓN DE TICKETS DE SOPORTE
+              ────────────────────────────────────────────────────────── */}
+              {subTabSoporte === 'tickets' && (
+                <div className="space-y-6">
+                  {/* KPI Summary Cards */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl flex items-center gap-3.5">
+                      <div className="w-12 h-12 rounded-xl bg-orange-500/10 border border-orange-500/30 flex items-center justify-center text-xl text-orange-400">
+                        🎫
+                      </div>
+                      <div>
+                        <div className="text-xl font-black text-white">{tickets.length}</div>
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Total Tickets</div>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl flex items-center gap-3.5">
+                      <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-xl text-amber-400">
+                        ⚡
+                      </div>
+                      <div>
+                        <div className="text-xl font-black text-amber-400">
+                          {tickets.filter(t => t.estado === 'abierto').length}
+                        </div>
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Abiertos (Nuevos)</div>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl flex items-center gap-3.5">
+                      <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-xl text-blue-400">
+                        🔄
+                      </div>
+                      <div>
+                        <div className="text-xl font-black text-blue-400">
+                          {tickets.filter(t => t.estado === 'en_proceso' || t.estado === 'esperando_respuesta').length}
+                        </div>
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">En Atención</div>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl flex items-center gap-3.5">
+                      <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-xl text-emerald-400">
+                        ✅
+                      </div>
+                      <div>
+                        <div className="text-xl font-black text-emerald-400">
+                          {tickets.filter(t => ['resuelto', 'cerrado'].includes(t.estado)).length}
+                        </div>
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Resueltos</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Filter Toolbar */}
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                    <div className="flex-1 flex flex-col sm:flex-row items-center gap-3">
+                      <div className="relative w-full sm:w-72">
+                        <span className="absolute left-3.5 top-2.5 text-slate-500 text-sm">🔍</span>
+                        <input
+                          type="text"
+                          placeholder="Buscar ticket o restaurante..."
+                          value={filtroTicketsObj.search}
+                          onChange={(e) => setFiltroTicketsObj({ ...filtroTicketsObj, search: e.target.value })}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-orange-500 transition-colors"
+                        />
+                      </div>
+
+                      <select
+                        value={filtroTicketsObj.estado}
+                        onChange={(e) => setFiltroTicketsObj({ ...filtroTicketsObj, estado: e.target.value })}
+                        className="w-full sm:w-auto bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-orange-500"
+                      >
+                        <option value="todos">Todos los Estados</option>
+                        <option value="abierto">Abiertos (Nuevos)</option>
+                        <option value="en_proceso">En Proceso</option>
+                        <option value="esperando_respuesta">Esperando Respuesta</option>
+                        <option value="resuelto">Resueltos</option>
+                        <option value="cerrado">Cerrados</option>
+                      </select>
+
+                      <select
+                        value={filtroTicketsObj.prioridad}
+                        onChange={(e) => setFiltroTicketsObj({ ...filtroTicketsObj, prioridad: e.target.value })}
+                        className="w-full sm:w-auto bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-orange-500"
+                      >
+                        <option value="todos">Todas las Prioridades</option>
+                        <option value="urgente">🔥 Urgente / Crítica</option>
+                        <option value="alta">⚠️ Alta</option>
+                        <option value="media">⚡ Media</option>
+                        <option value="baja">🌱 Baja</option>
+                      </select>
+
+                      <select
+                        value={filtroTicketsObj.categoria}
+                        onChange={(e) => setFiltroTicketsObj({ ...filtroTicketsObj, categoria: e.target.value })}
+                        className="w-full sm:w-auto bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-orange-500"
+                      >
+                        <option value="todos">Todas las Categorías</option>
+                        <option value="tecnico">Técnico / Fallas</option>
+                        <option value="facturacion">Facturación & Pagos</option>
+                        <option value="suscripcion">Planes & Suscripción</option>
+                        <option value="configuracion">Configuración & Menú</option>
+                        <option value="otro">Otro Motivo</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Tabla de Tickets */}
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                          <tr>
+                            <th className="py-4 px-6">Ticket #</th>
+                            <th className="py-4 px-6">Restaurante & Solicitante</th>
+                            <th className="py-4 px-6">Asunto & Categoría</th>
+                            <th className="py-4 px-6">Prioridad</th>
+                            <th className="py-4 px-6">Estado</th>
+                            <th className="py-4 px-6">Fecha</th>
+                            <th className="py-4 px-6 text-right">Acción</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800 text-slate-200">
+                          {tickets.length === 0 ? (
+                            <tr>
+                              <td colSpan="7" className="py-12 text-center text-slate-500">
+                                🎉 No hay tickets de soporte con los filtros seleccionados.
+                              </td>
+                            </tr>
+                          ) : (
+                            tickets.map(t => (
+                              <tr key={t.id} className="hover:bg-slate-800/40 transition-colors">
+                                <td className="py-4 px-6 font-mono font-bold text-orange-400">
+                                  #{t.id}
+                                </td>
+                                <td className="py-4 px-6">
+                                  <div className="font-bold text-white flex items-center gap-1.5">
+                                    <span>🍗</span>
+                                    <span>{t.negocio?.nombre_comercial || `Restaurante #${t.negocio_id}`}</span>
+                                  </div>
+                                  <div className="text-[11px] text-slate-400 mt-0.5">
+                                    Por: {t.usuario?.nombre || 'Usuario'}
+                                  </div>
+                                </td>
+                                <td className="py-4 px-6">
+                                  <div className="font-semibold text-slate-200">{t.asunto}</div>
+                                  <span className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">
+                                    {t.categoria || 'general'}
+                                  </span>
+                                </td>
+                                <td className="py-4 px-6">
+                                  <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 ${
+                                    t.prioridad === 'urgente' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
+                                    t.prioridad === 'alta' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' :
+                                    t.prioridad === 'media' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                                    'bg-slate-800 text-slate-300 border border-slate-700'
+                                  }`}>
+                                    {t.prioridad === 'urgente' && '🔥'}
+                                    {t.prioridad}
+                                  </span>
+                                </td>
+                                <td className="py-4 px-6">
+                                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1.5 ${
+                                    t.estado === 'abierto' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                                    t.estado === 'en_proceso' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
+                                    t.estado === 'esperando_respuesta' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' :
+                                    'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                  }`}>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
+                                    {t.estado.replace('_', ' ')}
+                                  </span>
+                                </td>
+                                <td className="py-4 px-6 text-slate-400 text-[11px] font-mono">
+                                  {new Date(t.created_at).toLocaleDateString('es-BO', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                </td>
+                                <td className="py-4 px-6 text-right">
+                                  <button
+                                    onClick={() => handleAbrirTicket(t.id)}
+                                    className="px-3 py-1.5 bg-gradient-to-r from-orange-500 to-amber-600 hover:brightness-110 text-white rounded-lg font-bold text-xs shadow-md transition-all cursor-pointer flex items-center gap-1.5 ml-auto"
+                                  >
+                                    <span>💬</span>
+                                    <span>Atender</span>
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ──────────────────────────────────────────────────────────
+                  SUB-TAB 2: CENTRO DE NOTIFICACIONES & BROADCAST
+              ────────────────────────────────────────────────────────── */}
+              {subTabSoporte === 'notificaciones' && (
+                <div className="space-y-6">
+                  {/* Banner Explicativo */}
+                  <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div>
+                      <h3 className="text-sm font-black text-white flex items-center gap-2">
+                        <span>📢</span> Centro de Comunicaciones Masivas (Broadcast)
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Envía notificaciones oficiales en tiempo real a restaurantes (avisos de mantenimiento, recordatorios de pago o nuevas funciones).
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={filtroNotifTipo}
+                        onChange={(e) => setFiltroNotifTipo(e.target.value)}
+                        className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-orange-500"
+                      >
+                        <option value="todos">Todos los Tipos</option>
+                        <option value="mantenimiento">🔧 Mantenimiento</option>
+                        <option value="actualizacion">🚀 Actualizaciones</option>
+                        <option value="recordatorio_pago">💰 Recordatorio Pago</option>
+                        <option value="vencimiento">⚠️ Vencimientos</option>
+                        <option value="nueva_funcionalidad">✨ Nuevas Funciones</option>
+                        <option value="comunicado">📢 Comunicados</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Historial de Notificaciones */}
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                          <tr>
+                            <th className="py-4 px-6">Tipo</th>
+                            <th className="py-4 px-6">Título & Contenido</th>
+                            <th className="py-4 px-6">Restaurante Destino</th>
+                            <th className="py-4 px-6">Fecha de Envío</th>
+                            <th className="py-4 px-6 text-right">Acción</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800 text-slate-200">
+                          {notificacionesList.length === 0 ? (
+                            <tr>
+                              <td colSpan="5" className="py-12 text-center text-slate-500">
+                                No se registran comunicados emitidos recientemente.
+                              </td>
+                            </tr>
+                          ) : (
+                            notificacionesList.map(n => {
+                              const tipoBadge = {
+                                mantenimiento: { color: 'bg-amber-500/20 text-amber-400 border-amber-500/30', icon: '🔧' },
+                                actualizacion: { color: 'bg-blue-500/20 text-blue-400 border-blue-500/30', icon: '🚀' },
+                                recordatorio_pago: { color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30', icon: '💰' },
+                                vencimiento: { color: 'bg-red-500/20 text-red-400 border-red-500/30', icon: '⚠️' },
+                                nueva_funcionalidad: { color: 'bg-purple-500/20 text-purple-400 border-purple-500/30', icon: '✨' },
+                                comunicado: { color: 'bg-orange-500/20 text-orange-400 border-orange-500/30', icon: '📢' },
+                              }[n.tipo] || { color: 'bg-slate-800 text-slate-300 border-slate-700', icon: '📩' };
+
+                              return (
+                                <tr key={n.id} className="hover:bg-slate-800/40 transition-colors">
+                                  <td className="py-4 px-6">
+                                    <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider border inline-flex items-center gap-1.5 ${tipoBadge.color}`}>
+                                      <span>{tipoBadge.icon}</span>
+                                      <span>{n.tipo.replace('_', ' ')}</span>
+                                    </span>
+                                  </td>
+
+                                  <td className="py-4 px-6 max-w-md">
+                                    <div className="font-bold text-white text-sm">{n.titulo}</div>
+                                    <div className="text-slate-400 text-xs mt-1 line-clamp-2">
+                                      {n.mensaje}
+                                    </div>
+                                  </td>
+
+                                  <td className="py-4 px-6">
+                                    {n.negocio_id ? (
+                                      <span className="font-semibold text-orange-400">
+                                        {n.negocio?.nombre_comercial || `Restaurante #${n.negocio_id}`}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400 font-bold">
+                                        🌐 Todos los restaurantes
+                                      </span>
+                                    )}
+                                  </td>
+
+                                  <td className="py-4 px-6 text-slate-400 text-[11px] font-mono">
+                                    {new Date(n.creado_en).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}
+                                  </td>
+
+                                  <td className="py-4 px-6 text-right">
+                                    <button
+                                      onClick={() => handleEliminarNotificacion(n.id)}
+                                      className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs transition-all cursor-pointer"
+                                      title="Eliminar notificación"
+                                    >
+                                      🗑️
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -2933,29 +3355,52 @@ export default function SuperAdminDashboard() {
       ───────────────────────────────────────────────────────────── */}
       {showModalTicket && ticketSeleccionado && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full p-6 sm:p-8 max-h-[90vh] flex flex-col justify-between space-y-4 shadow-2xl">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full p-6 sm:p-7 max-h-[92vh] flex flex-col justify-between space-y-4 shadow-2xl">
             <div>
-              <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <div className="flex justify-between items-start border-b border-slate-800 pb-3">
                 <div>
-                  <h3 className="text-lg font-black text-white">Ticket #{ticketSeleccionado.id}: {ticketSeleccionado.asunto}</h3>
-                  <p className="text-xs text-slate-400">Restaurante: <strong className="text-orange-400">{ticketSeleccionado.negocio?.nombre_comercial}</strong></p>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-orange-400 text-sm">#{ticketSeleccionado.id}</span>
+                    <h3 className="text-base font-black text-white">{ticketSeleccionado.asunto}</h3>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mt-1">
+                    <span>Restaurante: <strong className="text-orange-400">{ticketSeleccionado.negocio?.nombre_comercial}</strong></span>
+                    <span>•</span>
+                    <span>Prioridad: <strong className="uppercase text-amber-300">{ticketSeleccionado.prioridad}</strong></span>
+                    <span>•</span>
+                    <span>Estado: <strong className="uppercase text-emerald-400">{ticketSeleccionado.estado.replace('_', ' ')}</strong></span>
+                  </div>
                 </div>
-                <button onClick={() => setShowModalTicket(false)} className="text-slate-400 hover:text-white text-xl">✕</button>
+                <button onClick={() => setShowModalTicket(false)} className="text-slate-400 hover:text-white text-xl cursor-pointer">✕</button>
               </div>
 
-              {/* Mensajes */}
-              <div className="h-64 overflow-y-auto space-y-3 p-3 bg-slate-950 rounded-xl border border-slate-800 mt-4">
+              {/* Mensajes del Thread */}
+              <div className="h-64 overflow-y-auto space-y-3 p-3 bg-slate-950 rounded-xl border border-slate-800 mt-4 custom-scrollbar">
                 {(ticketSeleccionado.mensajes || []).map(m => (
                   <div key={m.id} className={`p-3 rounded-xl text-xs max-w-[85%] ${
                     m.es_superadmin
                       ? 'ml-auto bg-orange-600/20 border border-orange-500/30 text-white'
-                      : 'bg-slate-800 text-slate-200'
+                      : 'bg-slate-850 border border-slate-800 text-slate-200'
                   }`}>
                     <div className="flex justify-between items-center text-[10px] text-slate-400 mb-1">
-                      <span className="font-bold">{m.es_superadmin ? 'Soporte Super Admin' : m.usuario?.nombre}</span>
+                      <span className="font-bold flex items-center gap-1">
+                        <span>{m.es_superadmin ? '🛡️ Super Admin' : '👤 ' + (m.usuario?.nombre || 'Cliente')}</span>
+                      </span>
                       <span>{new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
-                    <p className="leading-relaxed">{m.mensaje}</p>
+                    <p className="leading-relaxed whitespace-pre-wrap">{m.mensaje}</p>
+                    {m.adjunto_url && (
+                      <div className="mt-2 pt-2 border-t border-slate-700/50">
+                        <a
+                          href={m.adjunto_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 text-[11px] text-orange-400 hover:underline font-bold"
+                        >
+                          <span>📎 Ver archivo adjunto</span>
+                        </a>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -2968,27 +3413,315 @@ export default function SuperAdminDashboard() {
                 placeholder="Escribe la respuesta oficial al restaurante..."
                 value={respuestaTicket}
                 onChange={(e) => setRespuestaTicket(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-orange-500 resize-none"
+                required
               />
-              <div className="flex justify-between items-center">
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  placeholder="URL archivo adjunto / comprobante (opcional)"
+                  value={respuestaTicketAdjunto}
+                  onChange={(e) => setRespuestaTicketAdjunto(e.target.value)}
+                  className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+                />
+
+                <select
+                  value={respuestaTicketEstado}
+                  onChange={(e) => setRespuestaTicketEstado(e.target.value)}
+                  className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-orange-500"
+                >
+                  <option value="en_proceso">En Proceso</option>
+                  <option value="esperando_respuesta">Esperando Respuesta del Cliente</option>
+                  <option value="resuelto">✓ Marcar como Resuelto</option>
+                  <option value="cerrado">🔒 Cerrar Ticket</option>
+                </select>
+              </div>
+
+              <div className="flex justify-between items-center pt-2">
                 <button
                   type="button"
-                  onClick={async () => {
-                    await updateEstadoTicket(ticketSeleccionado.id, 'resuelto');
-                    toast.success('Ticket marcado como resuelto');
-                    setShowModalTicket(false);
-                    const ts = await getTickets();
-                    setTickets(ts);
-                  }}
-                  className="px-3 py-1.5 bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded-lg font-bold text-xs transition-all"
+                  onClick={() => handleActualizarEstadoTicket(ticketSeleccionado.id, 'resuelto')}
+                  className="px-3 py-1.5 bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded-lg font-bold text-xs transition-all cursor-pointer"
                 >
                   ✓ Marcar Resuelto
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-xl shadow-lg transition-all"
+                  className="px-5 py-2 bg-gradient-to-r from-orange-500 to-amber-600 hover:brightness-110 text-white font-bold text-xs rounded-xl shadow-lg shadow-orange-500/30 transition-all cursor-pointer"
                 >
-                  Enviar Respuesta
+                  Enviar Respuesta Oficial
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CREAR TICKET DE SOPORTE */}
+      {showModalCrearTicket && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <div className="flex justify-between items-center pb-4 border-b border-slate-800">
+              <div>
+                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                  <span>🎫</span> Abrir Ticket de Soporte Técnico
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Registra una solicitud de asistencia o reporte técnico para un restaurante
+                </p>
+              </div>
+              <button
+                onClick={() => setShowModalCrearTicket(false)}
+                className="text-slate-400 hover:text-white text-xl cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCrearTicket} className="space-y-4 mt-5">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Restaurante *
+                </label>
+                <select
+                  value={formNuevoTicket.negocio_id}
+                  onChange={(e) => setFormNuevoTicket({ ...formNuevoTicket, negocio_id: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                  required
+                >
+                  <option value="">-- Selecciona el Restaurante --</option>
+                  {negocios.map(n => (
+                    <option key={n.id} value={n.id}>
+                      {n.nombre} ({n.slug || `ID #${n.id}`})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Asunto del Ticket *
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. Error en emisión de comprobante o sincronización"
+                  value={formNuevoTicket.asunto}
+                  onChange={(e) => setFormNuevoTicket({ ...formNuevoTicket, asunto: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Categoría *
+                  </label>
+                  <select
+                    value={formNuevoTicket.categoria}
+                    onChange={(e) => setFormNuevoTicket({ ...formNuevoTicket, categoria: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                    required
+                  >
+                    <option value="tecnico">Técnico / Falla</option>
+                    <option value="facturacion">Facturación & Pagos</option>
+                    <option value="suscripcion">Suscripción & Plan</option>
+                    <option value="configuracion">Configuración</option>
+                    <option value="otro">Otro</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Prioridad *
+                  </label>
+                  <select
+                    value={formNuevoTicket.prioridad}
+                    onChange={(e) => setFormNuevoTicket({ ...formNuevoTicket, prioridad: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                    required
+                  >
+                    <option value="baja">Baja</option>
+                    <option value="media">Media</option>
+                    <option value="alta">Alta</option>
+                    <option value="urgente">🔥 Urgente / Crítica</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Descripción Inicial del Problema *
+                </label>
+                <textarea
+                  rows="3"
+                  placeholder="Detalla la incidencia técnica o motivo del ticket..."
+                  value={formNuevoTicket.mensaje}
+                  onChange={(e) => setFormNuevoTicket({ ...formNuevoTicket, mensaje: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-white text-sm focus:border-orange-500 focus:outline-none resize-none"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowModalCrearTicket(false)}
+                  className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-amber-600 hover:brightness-110 text-white rounded-xl font-black text-xs uppercase tracking-wider shadow-lg shadow-orange-500/30 cursor-pointer"
+                >
+                  Abrir Ticket
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: EMITIR NOTIFICACIÓN BROADCAST */}
+      {showModalBroadcast && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <div className="flex justify-between items-center pb-4 border-b border-slate-800">
+              <div>
+                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                  <span>📢</span> Emitir Comunicado Oficial / Broadcast
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Difusión masiva a restaurantes según estado o plan contratado
+                </p>
+              </div>
+              <button
+                onClick={() => setShowModalBroadcast(false)}
+                className="text-slate-400 hover:text-white text-xl cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleEmitirBroadcast} className="space-y-4 mt-5">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Audiencia Destino *
+                </label>
+                <select
+                  value={formBroadcast.destino}
+                  onChange={(e) => setFormBroadcast({ ...formBroadcast, destino: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                  required
+                >
+                  <option value="todos">🌐 Todos los Restaurantes de la Plataforma</option>
+                  <option value="proximos_vencer">⚠️ Suscripciones Próximas a Vencer (≤ 7 días)</option>
+                  <option value="suspendidos">⛔ Restaurantes Suspendidos</option>
+                  <option value="plan">💎 Restaurantes por Plan Específico</option>
+                  <option value="especifico">🏢 Un Restaurante Específico</option>
+                </select>
+              </div>
+
+              {formBroadcast.destino === 'plan' && (
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Plan Seleccionado *
+                  </label>
+                  <select
+                    value={formBroadcast.plan_id}
+                    onChange={(e) => setFormBroadcast({ ...formBroadcast, plan_id: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                    required
+                  >
+                    <option value="">-- Elige un Plan --</option>
+                    {planes.map(p => (
+                      <option key={p.id} value={p.id}>{p.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {formBroadcast.destino === 'especifico' && (
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Restaurante Destinatario *
+                  </label>
+                  <select
+                    value={formBroadcast.negocio_id}
+                    onChange={(e) => setFormBroadcast({ ...formBroadcast, negocio_id: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                    required
+                  >
+                    <option value="">-- Selecciona el Restaurante --</option>
+                    {negocios.map(n => (
+                      <option key={n.id} value={n.id}>{n.nombre} ({n.slug || `ID #${n.id}`})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Tipo de Notificación *
+                </label>
+                <select
+                  value={formBroadcast.tipo}
+                  onChange={(e) => setFormBroadcast({ ...formBroadcast, tipo: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                  required
+                >
+                  <option value="comunicado">📢 Comunicado General</option>
+                  <option value="mantenimiento">🔧 Aviso de Mantenimiento Programado</option>
+                  <option value="actualizacion">🚀 Actualización de Sistema</option>
+                  <option value="recordatorio_pago">💰 Recordatorio de Pago / Facturación</option>
+                  <option value="vencimiento">⚠️ Aviso de Vencimiento de Suscripción</option>
+                  <option value="nueva_funcionalidad">✨ Nueva Funcionalidad Disponible</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Título del Comunicado *
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. Mantenimiento de Servidores este Domingo 02:00 AM"
+                  value={formBroadcast.titulo}
+                  onChange={(e) => setFormBroadcast({ ...formBroadcast, titulo: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Mensaje / Contenido *
+                </label>
+                <textarea
+                  rows="3"
+                  placeholder="Detalla las instrucciones o novedades para los clientes..."
+                  value={formBroadcast.mensaje}
+                  onChange={(e) => setFormBroadcast({ ...formBroadcast, mensaje: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-white text-sm focus:border-orange-500 focus:outline-none resize-none"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowModalBroadcast(false)}
+                  className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-amber-600 hover:brightness-110 text-white rounded-xl font-black text-xs uppercase tracking-wider shadow-lg shadow-orange-500/30 cursor-pointer"
+                >
+                  Emitir Comunicado
                 </button>
               </div>
             </form>

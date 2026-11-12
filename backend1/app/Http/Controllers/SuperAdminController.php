@@ -1541,12 +1541,15 @@ class SuperAdminController extends Controller
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 8. SOPORTE TÉCNICO
+    // 8. SOPORTE TÉCNICO & TICKETS (FASE 7)
     // ─────────────────────────────────────────────────────────────────────────
     public function getTickets(Request $request)
     {
         $estado = $request->query('estado');
         $prioridad = $request->query('prioridad');
+        $categoria = $request->query('categoria');
+        $negocioId = $request->query('negocio_id');
+        $search = $request->query('search');
 
         $query = SoporteTicket::with([
             'negocio:id,nombre_comercial,slug',
@@ -1555,15 +1558,76 @@ class SuperAdminController extends Controller
             'ultimoMensaje'
         ])->orderBy('id', 'desc');
 
-        if ($estado) {
+        if ($estado && $estado !== 'todos') {
             $query->where('estado', $estado);
         }
 
-        if ($prioridad) {
+        if ($prioridad && $prioridad !== 'todos') {
             $query->where('prioridad', $prioridad);
         }
 
+        if ($categoria && $categoria !== 'todos') {
+            $query->where('categoria', $categoria);
+        }
+
+        if ($negocioId) {
+            $query->where('negocio_id', $negocioId);
+        }
+
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('asunto', 'like', "%{$search}%")
+                  ->orWhereHas('negocio', function($nq) use ($search) {
+                      $nq->where('nombre_comercial', 'like', "%{$search}%");
+                  });
+            });
+        }
+
         return response()->json($query->get());
+    }
+
+    public function createTicket(Request $request)
+    {
+        $request->validate([
+            'negocio_id' => 'required|exists:negocios,id',
+            'asunto'     => 'required|string|max:200',
+            'categoria'  => 'required|string|in:tecnico,facturacion,suscripcion,configuracion,otro',
+            'prioridad'  => 'required|in:baja,media,alta,urgente',
+            'mensaje'    => 'required|string',
+            'asignado_a' => 'nullable|exists:usuarios,id',
+        ]);
+
+        $ticket = SoporteTicket::create([
+            'negocio_id' => $request->input('negocio_id'),
+            'usuario_id' => $request->user()->id,
+            'asunto'     => $request->input('asunto'),
+            'categoria'  => $request->input('categoria'),
+            'prioridad'  => $request->input('prioridad'),
+            'estado'     => 'abierto',
+            'asignado_a' => $request->input('asignado_a'),
+        ]);
+
+        SoporteMensaje::create([
+            'ticket_id'     => $ticket->id,
+            'usuario_id'    => $request->user()->id,
+            'es_superadmin' => true,
+            'mensaje'       => $request->input('mensaje'),
+        ]);
+
+        AuditoriaService::registrar(
+            'crear_ticket_soporte',
+            'soporte_tickets',
+            $ticket->id,
+            $ticket->negocio_id,
+            null,
+            ['asunto' => $ticket->asunto, 'prioridad' => $ticket->prioridad]
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Ticket de soporte creado exitosamente.',
+            'ticket'  => $ticket->load(['negocio:id,nombre_comercial,slug', 'usuario:id,nombre'])
+        ], 201);
     }
 
     public function getTicketById($id)
@@ -1581,46 +1645,183 @@ class SuperAdminController extends Controller
     public function responderTicket(Request $request, $id)
     {
         $ticket = SoporteTicket::findOrFail($id);
-        $request->validate(['mensaje' => 'required|string']);
+        $request->validate([
+            'mensaje'      => 'required|string',
+            'adjunto_url'  => 'nullable|string',
+            'nuevo_estado' => 'nullable|in:abierto,en_proceso,esperando_respuesta,resuelto,cerrado',
+        ]);
 
         $mensaje = SoporteMensaje::create([
             'ticket_id'     => $ticket->id,
             'usuario_id'    => $request->user()->id,
             'es_superadmin' => true,
             'mensaje'       => $request->input('mensaje'),
+            'adjunto_url'   => $request->input('adjunto_url'),
         ]);
 
-        $ticket->estado = 'en_proceso';
+        $ticket->estado = $request->input('nuevo_estado', 'en_proceso');
+        if (in_array($ticket->estado, ['resuelto', 'cerrado'])) {
+            $ticket->resuelto_en = now();
+        }
         $ticket->save();
+
+        AuditoriaService::registrar(
+            'responder_ticket_soporte',
+            'soporte_tickets',
+            $ticket->id,
+            $ticket->negocio_id,
+            null,
+            ['ticket_id' => $ticket->id, 'nuevo_estado' => $ticket->estado]
+        );
 
         return response()->json([
             'success' => true,
             'message' => 'Respuesta registrada correctamente.',
-            'mensaje_soporte' => $mensaje->load('usuario:id,nombre,username,rol')
+            'mensaje_soporte' => $mensaje->load('usuario:id,nombre,username,rol'),
+            'ticket' => $ticket
         ]);
     }
 
     public function updateEstadoTicket(Request $request, $id)
     {
         $ticket = SoporteTicket::findOrFail($id);
-        $request->validate(['estado' => 'required|in:abierto,en_proceso,esperando_respuesta,resuelto,cerrado']);
+        $request->validate([
+            'estado'     => 'nullable|in:abierto,en_proceso,esperando_respuesta,resuelto,cerrado',
+            'prioridad'  => 'nullable|in:baja,media,alta,urgente',
+            'asignado_a' => 'nullable|exists:usuarios,id',
+        ]);
 
-        $ticket->estado = $request->input('estado');
-        if (in_array($ticket->estado, ['resuelto', 'cerrado'])) {
-            $ticket->resuelto_en = now();
+        if ($request->has('estado')) {
+            $ticket->estado = $request->input('estado');
+            if (in_array($ticket->estado, ['resuelto', 'cerrado'])) {
+                $ticket->resuelto_en = now();
+            }
         }
+
+        if ($request->has('prioridad')) {
+            $ticket->prioridad = $request->input('prioridad');
+        }
+
+        if ($request->has('asignado_a')) {
+            $ticket->asignado_a = $request->input('asignado_a');
+        }
+
         $ticket->save();
 
         return response()->json([
             'success' => true,
-            'message' => 'Estado del ticket actualizado a ' . $ticket->estado,
-            'ticket' => $ticket
+            'message' => 'Ticket actualizado correctamente.',
+            'ticket'  => $ticket
         ]);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 9. AUDITORÍA & NOTIFICACIONES
+    // 9. AUDITORÍA & NOTIFICACIONES / COMUNICADOS BROADCAST (FASE 7)
     // ─────────────────────────────────────────────────────────────────────────
+    public function getNotificaciones(Request $request)
+    {
+        $tipo = $request->query('tipo');
+        $negocioId = $request->query('negocio_id');
+
+        $query = Notificacion::with('negocio:id,nombre_comercial')
+            ->orderBy('id', 'desc');
+
+        if ($tipo && $tipo !== 'todos') {
+            $query->where('tipo', $tipo);
+        }
+
+        if ($negocioId) {
+            $query->where('negocio_id', $negocioId);
+        }
+
+        return response()->json($query->take(50)->get());
+    }
+
+    public function enviarNotificacionBroadcast(Request $request)
+    {
+        $request->validate([
+            'destino'    => 'required|in:todos,especifico,plan,proximos_vencer,suspendidos',
+            'negocio_id' => 'nullable|exists:negocios,id',
+            'plan_id'    => 'nullable|exists:planes,id',
+            'tipo'       => 'required|in:mantenimiento,actualizacion,recordatorio_pago,vencimiento,nueva_funcionalidad,comunicado',
+            'titulo'     => 'required|string|max:200',
+            'mensaje'    => 'required|string',
+        ]);
+
+        $destino = $request->input('destino');
+        $negociosIds = [];
+
+        if ($destino === 'todos') {
+            $negociosIds = Negocio::pluck('id')->toArray();
+        } elseif ($destino === 'especifico') {
+            $negociosIds = [$request->input('negocio_id')];
+        } elseif ($destino === 'plan') {
+            $negociosIds = Negocio::where('plan_id', $request->input('plan_id'))->pluck('id')->toArray();
+        } elseif ($destino === 'proximos_vencer') {
+            $negociosIds = Suscripcion::where('estado', 'activa')
+                ->where('fecha_fin', '<=', now()->addDays(7))
+                ->pluck('negocio_id')
+                ->unique()
+                ->toArray();
+        } elseif ($destino === 'suspendidos') {
+            $negociosIds = Negocio::where('estado', 'suspendido')->pluck('id')->toArray();
+        }
+
+        if (empty($negociosIds)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No se encontraron restaurantes que coincidan con el criterio seleccionado.'
+            ], 400);
+        }
+
+        $now = now();
+        $records = [];
+        foreach ($negociosIds as $nid) {
+            $records[] = [
+                'negocio_id' => $nid,
+                'usuario_id' => $request->user()->id,
+                'tipo'       => $request->input('tipo'),
+                'titulo'     => $request->input('titulo'),
+                'mensaje'    => $request->input('mensaje'),
+                'datos'      => json_encode(['destino' => $destino, 'emitido_por' => $request->user()->username]),
+                'leida'      => 0,
+                'creado_en'  => $now,
+            ];
+        }
+
+        Notificacion::insert($records);
+
+        AuditoriaService::registrar(
+            'broadcast_notificacion',
+            'notificaciones',
+            null,
+            null,
+            null,
+            [
+                'destino'      => $destino,
+                'tipo'         => $request->input('tipo'),
+                'titulo'       => $request->input('titulo'),
+                'destinatarios'=> count($negociosIds)
+            ]
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Comunicado enviado exitosamente a ' . count($negociosIds) . ' restaurante(s).'
+        ]);
+    }
+
+    public function deleteNotificacion($id)
+    {
+        $notif = Notificacion::findOrFail($id);
+        $notif->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Notificación eliminada correctamente.'
+        ]);
+    }
+
     public function getAuditoria(Request $request)
     {
         $accion = $request->query('accion');
@@ -1638,15 +1839,5 @@ class SuperAdminController extends Controller
         }
 
         return response()->json($query->paginate(25));
-    }
-
-    public function getNotificaciones()
-    {
-        $notificaciones = Notificacion::with('negocio:id,nombre_comercial')
-            ->orderBy('id', 'desc')
-            ->take(20)
-            ->get();
-
-        return response()->json($notificaciones);
     }
 }

@@ -178,18 +178,25 @@ export const getTickets = async (params = {}) => {
   return response.data;
 };
 
+export const createTicket = async (payload) => {
+  const response = await api.post('/super-admin/soporte/tickets', payload);
+  return response.data;
+};
+
 export const getTicketById = async (id) => {
   const response = await api.get(`/super-admin/soporte/tickets/${id}`);
   return response.data;
 };
 
-export const responderTicket = async (id, mensaje) => {
-  const response = await api.post(`/super-admin/soporte/tickets/${id}/responder`, { mensaje });
+export const responderTicket = async (id, payload) => {
+  const data = typeof payload === 'string' ? { mensaje: payload } : payload;
+  const response = await api.post(`/super-admin/soporte/tickets/${id}/responder`, data);
   return response.data;
 };
 
-export const updateEstadoTicket = async (id, estado) => {
-  const response = await api.put(`/super-admin/soporte/tickets/${id}/estado`, { estado });
+export const updateEstadoTicket = async (id, payload) => {
+  const data = typeof payload === 'string' ? { estado: payload } : payload;
+  const response = await api.put(`/super-admin/soporte/tickets/${id}`, data);
   return response.data;
 };
 
@@ -199,7 +206,17 @@ export const getAuditoria = async (params = {}) => {
   return response.data;
 };
 
-export const getNotificaciones = async () => {
-  const response = await api.get('/super-admin/notificaciones');
+export const getNotificaciones = async (params = {}) => {
+  const response = await api.get('/super-admin/notificaciones', { params });
+  return response.data;
+};
+
+export const enviarNotificacionBroadcast = async (payload) => {
+  const response = await api.post('/super-admin/notificaciones/broadcast', payload);
+  return response.data;
+};
+
+export const deleteNotificacion = async (id) => {
+  const response = await api.delete(`/super-admin/notificaciones/${id}`);
   return response.data;
 };
