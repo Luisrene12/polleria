@@ -1347,12 +1347,16 @@ class SuperAdminController extends Controller
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 7. GESTIÓN DE USUARIOS DE LA PLATAFORMA
+    // ─────────────────────────────────────────────────────────────────────────
+    // 7. GESTIÓN DE USUARIOS DE LA PLATAFORMA (ROLES SAAS & RESTAURANTES)
     // ─────────────────────────────────────────────────────────────────────────
     public function getUsuarios(Request $request)
     {
         $rol = $request->query('rol');
         $negocioId = $request->query('negocio_id');
+        $tipo = $request->query('tipo'); // 'saas', 'restaurante', 'todos'
+        $search = $request->query('search');
+        $activo = $request->query('activo');
 
         $query = Usuario::with('negocio:id,nombre_comercial,slug')
             ->orderBy('id', 'desc');
@@ -1361,8 +1365,25 @@ class SuperAdminController extends Controller
             $query->where('rol', $rol);
         }
 
+        if ($tipo === 'saas') {
+            $query->whereNull('negocio_id');
+        } elseif ($tipo === 'restaurante') {
+            $query->whereNotNull('negocio_id');
+        }
+
         if ($negocioId) {
             $query->where('negocio_id', $negocioId);
+        }
+
+        if ($activo !== null && $activo !== '') {
+            $query->where('activo', (int)$activo);
+        }
+
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('nombre', 'like', "%{$search}%")
+                  ->orWhere('username', 'like', "%{$search}%");
+            });
         }
 
         return response()->json($query->get());
@@ -1374,12 +1395,15 @@ class SuperAdminController extends Controller
             'nombre'     => 'required|string|max:100',
             'username'   => 'required|string|max:50|unique:usuarios,username',
             'password'   => 'required|string|min:4',
-            'rol'        => 'required|in:super_admin,admin,seller',
+            'rol'        => 'required|in:super_admin,admin_plataforma,finanzas,soporte,auditor,admin,seller',
             'negocio_id' => 'nullable|exists:negocios,id',
         ]);
 
+        $rolesSaaS = ['super_admin', 'admin_plataforma', 'finanzas', 'soporte', 'auditor'];
+        $esSaaS = in_array($request->input('rol'), $rolesSaaS);
+
         $usuario = Usuario::create([
-            'negocio_id' => $request->input('rol') === 'super_admin' ? null : $request->input('negocio_id'),
+            'negocio_id' => $esSaaS ? null : $request->input('negocio_id'),
             'nombre'     => $request->input('nombre'),
             'username'   => $request->input('username'),
             'pin_hash'   => Hash::make($request->input('password')),
@@ -1394,14 +1418,95 @@ class SuperAdminController extends Controller
             $usuario->id,
             $usuario->negocio_id,
             null,
-            ['username' => $usuario->username, 'rol' => $usuario->rol]
+            ['username' => $usuario->username, 'rol' => $usuario->rol, 'es_saas' => $esSaaS]
         );
 
         return response()->json([
             'success' => true,
-            'message' => 'Usuario creado exitosamente.',
+            'message' => 'Usuario creado exitosamente con rol ' . $usuario->rol,
             'usuario' => $usuario
         ], 201);
+    }
+
+    public function updateUsuario(Request $request, $id)
+    {
+        $usuario = Usuario::findOrFail($id);
+
+        $request->validate([
+            'nombre'     => 'required|string|max:100',
+            'username'   => 'required|string|max:50|unique:usuarios,username,' . $usuario->id,
+            'rol'        => 'required|in:super_admin,admin_plataforma,finanzas,soporte,auditor,admin,seller',
+            'negocio_id' => 'nullable|exists:negocios,id',
+            'activo'     => 'nullable|boolean',
+        ]);
+
+        // Protección especial: el super_admin #1 nunca puede perder su rol principal
+        if ($usuario->id === 1 && $request->input('rol') !== 'super_admin') {
+            return response()->json(['message' => 'No es posible degradar el rol del Super Admin principal.'], 400);
+        }
+
+        $rolesSaaS = ['super_admin', 'admin_plataforma', 'finanzas', 'soporte', 'auditor'];
+        $esSaaS = in_array($request->input('rol'), $rolesSaaS);
+
+        $antiguo = [
+            'nombre'     => $usuario->nombre,
+            'username'   => $usuario->username,
+            'rol'        => $usuario->rol,
+            'negocio_id' => $usuario->negocio_id,
+            'activo'     => $usuario->activo,
+        ];
+
+        $usuario->nombre = $request->input('nombre');
+        $usuario->username = $request->input('username');
+        $usuario->rol = $request->input('rol');
+        $usuario->negocio_id = $esSaaS ? null : $request->input('negocio_id');
+        if ($request->has('activo') && $usuario->id !== 1) {
+            $usuario->activo = $request->input('activo') ? 1 : 0;
+        }
+        $usuario->save();
+
+        AuditoriaService::registrar(
+            'actualizar_usuario',
+            'usuarios',
+            $usuario->id,
+            $usuario->negocio_id,
+            $antiguo,
+            ['nombre' => $usuario->nombre, 'username' => $usuario->username, 'rol' => $usuario->rol]
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Usuario actualizado correctamente.',
+            'usuario' => $usuario
+        ]);
+    }
+
+    public function resetPasswordUsuario(Request $request, $id)
+    {
+        $request->validate([
+            'password' => 'required|string|min:4'
+        ]);
+
+        $usuario = Usuario::findOrFail($id);
+        $usuario->pin_hash = Hash::make($request->input('password'));
+        $usuario->save();
+
+        // Invalidar tokens previos por seguridad
+        $usuario->tokens()->delete();
+
+        AuditoriaService::registrar(
+            'reset_password_usuario',
+            'usuarios',
+            $usuario->id,
+            $usuario->negocio_id,
+            null,
+            ['username' => $usuario->username, 'admin_autor' => $request->user()?->username]
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Contraseña / PIN de acceso restablecido exitosamente para ' . $usuario->username
+        ]);
     }
 
     public function toggleUsuarioActivo($id)
@@ -1418,6 +1523,15 @@ class SuperAdminController extends Controller
         if ($usuario->activo == 0) {
             $usuario->tokens()->delete();
         }
+
+        AuditoriaService::registrar(
+            'toggle_usuario_activo',
+            'usuarios',
+            $usuario->id,
+            $usuario->negocio_id,
+            null,
+            ['activo' => $usuario->activo, 'username' => $usuario->username]
+        );
 
         return response()->json([
             'success' => true,

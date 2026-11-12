@@ -91,6 +91,8 @@ Route::prefix('super-admin')->middleware(['auth:sanctum', 'super_admin'])->group
     // 7. Usuarios de la Plataforma
     Route::get('/usuarios', [SuperAdminController::class, 'getUsuarios']);
     Route::post('/usuarios', [SuperAdminController::class, 'createUsuario']);
+    Route::put('/usuarios/{id}', [SuperAdminController::class, 'updateUsuario']);
+    Route::post('/usuarios/{id}/reset-password', [SuperAdminController::class, 'resetPasswordUsuario']);
     Route::post('/usuarios/{id}/toggle-activo', [SuperAdminController::class, 'toggleUsuarioActivo']);
 
     // 8. Soporte Técnico

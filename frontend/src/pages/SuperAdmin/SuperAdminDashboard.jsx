@@ -29,6 +29,8 @@ import {
   toggleModuloNegocio,
   getUsuarios,
   createUsuario,
+  updateUsuario,
+  resetPasswordUsuario,
   toggleUsuarioActivo,
   getTickets,
   getTicketById,
@@ -123,6 +125,22 @@ export default function SuperAdminDashboard() {
   const [filtroSuscripciones, setFiltroSuscripciones] = useState({ search: '', estado: '' });
   const [filtroPagos, setFiltroPagos] = useState({ estado: '', search: '', metodo_pago: '', fecha_desde: '', fecha_hasta: '' });
   const [filtroTickets, setFiltroTickets] = useState('');
+  const [filtroUsuarios, setFiltroUsuarios] = useState({ search: '', rol: '', tipo: 'todos', activo: '' });
+
+  // Modales & Formularios Usuarios
+  const [showModalUsuario, setShowModalUsuario] = useState(false);
+  const [editandoUsuario, setEditandoUsuario] = useState(null);
+  const [formUsuario, setFormUsuario] = useState({
+    nombre: '',
+    username: '',
+    password: '',
+    rol: 'admin_plataforma',
+    negocio_id: '',
+    activo: 1,
+  });
+  const [showModalResetPass, setShowModalResetPass] = useState(false);
+  const [usuarioParaReset, setUsuarioParaReset] = useState(null);
+  const [nuevoPasswordParaUsuario, setNuevoPasswordParaUsuario] = useState('');
 
   // Modales Suscripciones & Pagos
   const [showModalCambiarPlan, setShowModalCambiarPlan] = useState(false);
@@ -186,8 +204,10 @@ export default function SuperAdminDashboard() {
           const negs = await getNegocios();
           setNegocios(negs);
         } else if (activeTab === 'usuarios') {
-          const res = await getUsuarios();
+          const res = await getUsuarios(filtroUsuarios);
           setUsuarios(res);
+          const negs = await getNegocios();
+          setNegocios(negs);
         } else if (activeTab === 'modulos') {
           const modGlobales = await getModulosGlobales();
           setModulos(modGlobales);
@@ -211,7 +231,7 @@ export default function SuperAdminDashboard() {
     };
 
     fetchTabData();
-  }, [activeTab, filtroNegocios, filtroSuscripciones, filtroPagos, filtroTickets]);
+  }, [activeTab, filtroNegocios, filtroSuscripciones, filtroPagos, filtroTickets, filtroUsuarios]);
 
   // Verificar subdominio al escribir con debounce
   useEffect(() => {
@@ -562,6 +582,88 @@ export default function SuperAdminDashboard() {
       setSuscripciones(updatedSubs);
     } catch (err) {
       toast.error('Error al renovar suscripción');
+    }
+  };
+
+  // ─── GESTIÓN DE USUARIOS Y ROLES (FASE 6) ──────────────────────────────────
+  const handleAbrirCrearUsuario = () => {
+    setEditandoUsuario(null);
+    setFormUsuario({
+      nombre: '',
+      username: '',
+      password: '',
+      rol: 'admin_plataforma',
+      negocio_id: '',
+      activo: 1,
+    });
+    setShowModalUsuario(true);
+  };
+
+  const handleAbrirEditarUsuario = (u) => {
+    setEditandoUsuario(u);
+    setFormUsuario({
+      nombre: u.nombre,
+      username: u.username,
+      password: '',
+      rol: u.rol,
+      negocio_id: u.negocio_id || '',
+      activo: u.activo,
+    });
+    setShowModalUsuario(true);
+  };
+
+  const handleGuardarUsuario = async (e) => {
+    e.preventDefault();
+    try {
+      if (editandoUsuario) {
+        const payload = {
+          nombre: formUsuario.nombre,
+          username: formUsuario.username,
+          rol: formUsuario.rol,
+          negocio_id: formUsuario.negocio_id || null,
+          activo: formUsuario.activo,
+        };
+        const res = await updateUsuario(editandoUsuario.id, payload);
+        toast.success(res.message);
+      } else {
+        const res = await createUsuario(formUsuario);
+        toast.success(res.message);
+      }
+      setShowModalUsuario(false);
+      const res = await getUsuarios(filtroUsuarios);
+      setUsuarios(res);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Error al guardar usuario');
+    }
+  };
+
+  const handleAbrirResetPass = (u) => {
+    setUsuarioParaReset(u);
+    setNuevoPasswordParaUsuario('');
+    setShowModalResetPass(true);
+  };
+
+  const handleEjecutarResetPass = async (e) => {
+    e.preventDefault();
+    if (!usuarioParaReset || !nuevoPasswordParaUsuario) return;
+    try {
+      const res = await resetPasswordUsuario(usuarioParaReset.id, { password: nuevoPasswordParaUsuario });
+      toast.success(res.message);
+      setShowModalResetPass(false);
+      setUsuarioParaReset(null);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Error al restablecer contraseña / PIN');
+    }
+  };
+
+  const handleToggleUsuario = async (id, nombre) => {
+    try {
+      const res = await toggleUsuarioActivo(id);
+      toast.success(res.message);
+      const updated = await getUsuarios(filtroUsuarios);
+      setUsuarios(updated);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Error al cambiar estado del usuario');
     }
   };
 
@@ -1731,63 +1833,282 @@ export default function SuperAdminDashboard() {
             </div>
           )}
 
-          {/* TAB 7: USUARIOS & ROLES */}
+          {/* TAB 7: USUARIOS & ROLES DEL SISTEMA SAAS */}
           {activeTab === 'usuarios' && (
             <div className="space-y-6">
+              {/* Header & KPI Summary Cards */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  <h2 className="text-xl font-black text-white flex items-center gap-2">
+                    <span>👥</span> Control de Usuarios, Roles & Permisos
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Administración de personal interno SaaS, administradores de sucursal y cajeros
+                  </p>
+                </div>
+                <button
+                  onClick={handleAbrirCrearUsuario}
+                  className="px-4 py-2.5 bg-gradient-to-r from-orange-500 to-amber-600 hover:brightness-110 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-orange-500/30 transition-all cursor-pointer"
+                >
+                  <span>＋</span>
+                  <span>Nuevo Usuario</span>
+                </button>
+              </div>
+
+              {/* KPI Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-xl bg-orange-500/10 border border-orange-500/30 flex items-center justify-center text-xl text-orange-400">
+                    👥
+                  </div>
+                  <div>
+                    <div className="text-xl font-black text-white">{usuarios.length}</div>
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Total Usuarios</div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-xl text-purple-400">
+                    👑
+                  </div>
+                  <div>
+                    <div className="text-xl font-black text-purple-400">
+                      {usuarios.filter(u => ['super_admin', 'admin_plataforma', 'finanzas', 'soporte', 'auditor'].includes(u.rol) || !u.negocio_id).length}
+                    </div>
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Internos SaaS</div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-xl text-amber-400">
+                    🏪
+                  </div>
+                  <div>
+                    <div className="text-xl font-black text-amber-400">
+                      {usuarios.filter(u => u.rol === 'admin').length}
+                    </div>
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Admins Negocio</div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-xl text-emerald-400">
+                    ⚡
+                  </div>
+                  <div>
+                    <div className="text-xl font-black text-emerald-400">
+                      {usuarios.filter(u => u.activo == 1).length}
+                    </div>
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Cuentas Activas</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Toolbar & Filters */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                <div className="flex-1 flex flex-col sm:flex-row items-center gap-3">
+                  <div className="relative w-full sm:w-72">
+                    <span className="absolute left-3.5 top-2.5 text-slate-500 text-sm">🔍</span>
+                    <input
+                      type="text"
+                      placeholder="Buscar por nombre o username..."
+                      value={filtroUsuarios.search}
+                      onChange={(e) => setFiltroUsuarios({ ...filtroUsuarios, search: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-orange-500 transition-colors"
+                    />
+                  </div>
+
+                  <select
+                    value={filtroUsuarios.tipo}
+                    onChange={(e) => setFiltroUsuarios({ ...filtroUsuarios, tipo: e.target.value })}
+                    className="w-full sm:w-auto bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-orange-500"
+                  >
+                    <option value="todos">Todos los Ámbitos</option>
+                    <option value="saas">🌐 Solo Internos SaaS</option>
+                    <option value="restaurante">🏪 Solo Restaurantes</option>
+                  </select>
+
+                  <select
+                    value={filtroUsuarios.rol}
+                    onChange={(e) => setFiltroUsuarios({ ...filtroUsuarios, rol: e.target.value })}
+                    className="w-full sm:w-auto bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-orange-500"
+                  >
+                    <option value="">Todos los Roles</option>
+                    <option value="super_admin">👑 Superadmin Maestro</option>
+                    <option value="admin_plataforma">🛡️ Admin Plataforma</option>
+                    <option value="finanzas">💰 Finanzas</option>
+                    <option value="soporte">🎧 Soporte Técnico</option>
+                    <option value="auditor">🔍 Auditor</option>
+                    <option value="admin">🏪 Admin Restaurante</option>
+                    <option value="seller">💼 Cajero / Vendedor</option>
+                  </select>
+
+                  <select
+                    value={filtroUsuarios.activo}
+                    onChange={(e) => setFiltroUsuarios({ ...filtroUsuarios, activo: e.target.value })}
+                    className="w-full sm:w-auto bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-orange-500"
+                  >
+                    <option value="">Cualquier Estado</option>
+                    <option value="1">Solo Activos</option>
+                    <option value="0">Solo Inactivos</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Tabla de Usuarios */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider border-b border-slate-800">
-                    <tr>
-                      <th className="py-4 px-6">Usuario</th>
-                      <th className="py-4 px-6">Username</th>
-                      <th className="py-4 px-6">Rol</th>
-                      <th className="py-4 px-6">Restaurante Asignado</th>
-                      <th className="py-4 px-6">Estado</th>
-                      <th className="py-4 px-6 text-right">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800 text-slate-200">
-                    {usuarios.map(u => (
-                      <tr key={u.id} className="hover:bg-slate-800/40">
-                        <td className="py-4 px-6 font-bold text-white">{u.nombre}</td>
-                        <td className="py-4 px-6 font-mono text-orange-400">{u.username}</td>
-                        <td className="py-4 px-6">
-                          <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase ${
-                            u.rol === 'super_admin' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
-                            u.rol === 'admin' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' :
-                            'bg-blue-500/20 text-blue-400'
-                          }`}>
-                            {u.rol}
-                          </span>
-                        </td>
-                        <td className="py-4 px-6 text-slate-300">
-                          {u.negocio?.nombre_comercial || <span className="text-slate-500 font-bold">Plataforma Global (SaaS)</span>}
-                        </td>
-                        <td className="py-4 px-6">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            u.activo ? 'text-emerald-400 bg-emerald-500/10' : 'text-red-400 bg-red-500/10'
-                          }`}>
-                            {u.activo ? 'Activo' : 'Inactivo'}
-                          </span>
-                        </td>
-                        <td className="py-4 px-6 text-right">
-                          {u.id !== 1 && (
-                            <button
-                              onClick={async () => {
-                                await toggleUsuarioActivo(u.id);
-                                const us = await getUsuarios();
-                                setUsuarios(us);
-                              }}
-                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg font-bold text-xs transition-all"
-                            >
-                              {u.activo ? 'Desactivar' : 'Activar'}
-                            </button>
-                          )}
-                        </td>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                      <tr>
+                        <th className="py-4 px-6">Usuario & Cuenta</th>
+                        <th className="py-4 px-6">Rol / Permisos</th>
+                        <th className="py-4 px-6">Ámbito Asignado</th>
+                        <th className="py-4 px-6">Último Acceso</th>
+                        <th className="py-4 px-6">Estado</th>
+                        <th className="py-4 px-6 text-right">Acciones</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800 text-slate-200">
+                      {usuarios.length === 0 ? (
+                        <tr>
+                          <td colSpan="6" className="py-12 text-center text-slate-500">
+                            No se encontraron usuarios con los filtros especificados.
+                          </td>
+                        </tr>
+                      ) : (
+                        usuarios.map(u => {
+                          const esSaas = ['super_admin', 'admin_plataforma', 'finanzas', 'soporte', 'auditor'].includes(u.rol) || !u.negocio_id;
+                          return (
+                            <tr key={u.id} className="hover:bg-slate-800/40 transition-colors">
+                              <td className="py-4 px-6">
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs uppercase shadow-sm ${
+                                    u.rol === 'super_admin' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/40' :
+                                    u.rol === 'admin_plataforma' ? 'bg-blue-600/20 text-blue-300 border border-blue-500/40' :
+                                    u.rol === 'finanzas' ? 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/40' :
+                                    u.rol === 'soporte' ? 'bg-amber-600/20 text-amber-300 border border-amber-500/40' :
+                                    u.rol === 'auditor' ? 'bg-cyan-600/20 text-cyan-300 border border-cyan-500/40' :
+                                    u.rol === 'admin' ? 'bg-orange-600/20 text-orange-300 border border-orange-500/40' :
+                                    'bg-slate-800 text-slate-300 border border-slate-700'
+                                  }`}>
+                                    {(u.nombre || 'U').substring(0, 2)}
+                                  </div>
+                                  <div>
+                                    <div className="font-bold text-white flex items-center gap-1.5">
+                                      {u.nombre}
+                                      {u.id === 1 && (
+                                        <span className="text-[10px] bg-purple-500/20 text-purple-400 border border-purple-500/40 px-1.5 py-0.2 rounded font-black">
+                                          ROOT
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="font-mono text-slate-400 text-[11px] mt-0.5">
+                                      @{u.username}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td className="py-4 px-6">
+                                <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 ${
+                                  u.rol === 'super_admin' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40' :
+                                  u.rol === 'admin_plataforma' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40' :
+                                  u.rol === 'finanzas' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' :
+                                  u.rol === 'soporte' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
+                                  u.rol === 'auditor' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' :
+                                  u.rol === 'admin' ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40' :
+                                  'bg-slate-800 text-slate-300 border border-slate-700'
+                                }`}>
+                                  {u.rol === 'super_admin' ? '👑 Superadmin Maestro' :
+                                   u.rol === 'admin_plataforma' ? '🛡️ Admin Plataforma' :
+                                   u.rol === 'finanzas' ? '💰 Finanzas SaaS' :
+                                   u.rol === 'soporte' ? '🎧 Soporte Técnico' :
+                                   u.rol === 'auditor' ? '🔍 Auditor SaaS' :
+                                   u.rol === 'admin' ? '🏪 Admin Negocio' :
+                                   '💼 Cajero / Venta'}
+                                </span>
+                              </td>
+
+                              <td className="py-4 px-6">
+                                {esSaas ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 font-bold text-[11px]">
+                                    <span>🌐</span> Plataforma SaaS Central
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-orange-950/40 border border-orange-900/40 text-orange-300 font-bold text-[11px]">
+                                    <span>🍗</span> {u.negocio?.nombre_comercial || `Restaurante #${u.negocio_id}`}
+                                  </span>
+                                )}
+                              </td>
+
+                              <td className="py-4 px-6 text-slate-400 text-[11px]">
+                                {u.ultimo_login ? (
+                                  <div>
+                                    <div className="text-white font-medium">
+                                      {new Date(u.ultimo_login).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 font-mono">
+                                      IP: {u.ip_ultimo_login || '127.0.0.1'}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-600 italic">Sin registros de sesión</span>
+                                )}
+                              </td>
+
+                              <td className="py-4 px-6">
+                                <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 ${
+                                  u.activo ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20' : 'text-red-400 bg-red-500/10 border border-red-500/20'
+                                }`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${u.activo ? 'bg-emerald-400' : 'bg-red-400'}`}></span>
+                                  {u.activo ? 'Activo' : 'Inactivo'}
+                                </span>
+                              </td>
+
+                              <td className="py-4 px-6 text-right">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    onClick={() => handleAbrirEditarUsuario(u)}
+                                    className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-xs transition-all cursor-pointer"
+                                    title="Editar datos del usuario"
+                                  >
+                                    ✏️
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleAbrirResetPass(u)}
+                                    className="p-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg text-xs transition-all cursor-pointer"
+                                    title="Restablecer Contraseña / PIN"
+                                  >
+                                    🔑
+                                  </button>
+
+                                  {u.id === 1 ? (
+                                    <span className="px-2 py-1 text-[10px] text-slate-500 font-bold bg-slate-950 border border-slate-800 rounded-lg" title="Usuario principal no modificable">
+                                      🔒 Protegido
+                                    </span>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleToggleUsuario(u.id, u.nombre)}
+                                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                                        u.activo
+                                          ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20'
+                                          : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20'
+                                      }`}
+                                    >
+                                      {u.activo ? 'Desactivar' : 'Activar'}
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -3093,6 +3414,228 @@ export default function SuperAdminDashboard() {
                   className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-110 text-white rounded-xl font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/30 cursor-pointer"
                 >
                   Guardar Pago
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CREAR / EDITAR USUARIO */}
+      {showModalUsuario && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <div className="flex justify-between items-center pb-4 border-b border-slate-800">
+              <div>
+                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                  <span>{editandoUsuario ? '✏️' : '👥'}</span>
+                  {editandoUsuario ? `Editar Usuario: ${editandoUsuario.username}` : 'Crear Nuevo Usuario'}
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Control granular de roles y asignación de restaurantes
+                </p>
+              </div>
+              <button
+                onClick={() => setShowModalUsuario(false)}
+                className="text-slate-400 hover:text-white text-xl cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleGuardarUsuario} className="space-y-4 mt-5">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Nombre Completo *
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. Juan Pérez"
+                  value={formUsuario.nombre}
+                  onChange={(e) => setFormUsuario({ ...formUsuario, nombre: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Nombre de Usuario (Username / Login) *
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. juanperez"
+                  value={formUsuario.username}
+                  onChange={(e) => setFormUsuario({ ...formUsuario, username: e.target.value.toLowerCase().trim() })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm font-mono focus:border-orange-500 focus:outline-none"
+                  required
+                />
+              </div>
+
+              {!editandoUsuario && (
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Contraseña / PIN de Acceso * (Mín. 4 caracteres)
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="Contraseña o PIN numérico"
+                    value={formUsuario.password}
+                    onChange={(e) => setFormUsuario({ ...formUsuario, password: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                    required
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Rol & Nivel de Permisos *
+                </label>
+                <select
+                  value={formUsuario.rol}
+                  onChange={(e) => setFormUsuario({ ...formUsuario, rol: e.target.value })}
+                  disabled={editandoUsuario?.id === 1}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                  required
+                >
+                  <optgroup label="🌐 Plataforma SaaS Central">
+                    <option value="super_admin">👑 Superadministrador Maestro (Acceso Total)</option>
+                    <option value="admin_plataforma">🛡️ Administrador de Plataforma (Restaurantes & Planes)</option>
+                    <option value="finanzas">💰 Finanzas (Verificación de Pagos & Suscripciones)</option>
+                    <option value="soporte">🎧 Soporte Técnico (Gestión de Tickets & Diagnóstico)</option>
+                    <option value="auditor">🔍 Auditor (Bitácora & Reportes)</option>
+                  </optgroup>
+                  <optgroup label="🏪 Restaurantes del Ecosistema">
+                    <option value="admin">🏪 Administrador del Restaurante</option>
+                    <option value="seller">💼 Cajero / Vendedor de Punto de Venta</option>
+                  </optgroup>
+                </select>
+                {editandoUsuario?.id === 1 && (
+                  <p className="text-[11px] text-amber-400 mt-1">
+                    🔒 El rol del usuario raíz (Super Admin #1) está protegido contra modificaciones.
+                  </p>
+                )}
+              </div>
+
+              {/* Si el rol pertenece a un restaurante, mostrar selector */}
+              {['admin', 'seller'].includes(formUsuario.rol) && (
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Restaurante Asignado *
+                  </label>
+                  <select
+                    value={formUsuario.negocio_id}
+                    onChange={(e) => setFormUsuario({ ...formUsuario, negocio_id: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                    required
+                  >
+                    <option value="">-- Selecciona el Restaurante --</option>
+                    {negocios.map(n => (
+                      <option key={n.id} value={n.id}>
+                        {n.nombre} ({n.slug || `ID #${n.id}`})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {editandoUsuario && editandoUsuario.id !== 1 && (
+                <div className="pt-2">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formUsuario.activo == 1}
+                      onChange={(e) => setFormUsuario({ ...formUsuario, activo: e.target.checked ? 1 : 0 })}
+                      className="w-4 h-4 text-orange-500 rounded bg-slate-950 border-slate-700"
+                    />
+                    <span className="text-xs font-bold text-slate-300">
+                      Cuenta activa (Permite iniciar sesión en el sistema)
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowModalUsuario(false)}
+                  className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-amber-600 hover:brightness-110 text-white rounded-xl font-black text-xs uppercase tracking-wider shadow-lg shadow-orange-500/30 cursor-pointer"
+                >
+                  {editandoUsuario ? 'Guardar Cambios' : 'Crear Usuario'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: RESET PASSWORD / PIN */}
+      {showModalResetPass && usuarioParaReset && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-fade-in">
+            <div className="flex justify-between items-center pb-4 border-b border-slate-800">
+              <div>
+                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                  <span>🔑</span> Restablecer Contraseña / PIN
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Usuario: <span className="text-orange-400 font-bold">{usuarioParaReset.nombre}</span> (@{usuarioParaReset.username})
+                </p>
+              </div>
+              <button
+                onClick={() => setShowModalResetPass(false)}
+                className="text-slate-400 hover:text-white text-xl cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleEjecutarResetPass} className="space-y-4 mt-5">
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-300 space-y-1">
+                <div className="font-bold flex items-center gap-1.5">
+                  <span>⚠️</span> Advertencia de Seguridad
+                </div>
+                <p className="text-[11px] text-amber-200/80">
+                  Al restablecer la clave, todas las sesiones activas del usuario se cerrarán inmediatamente por seguridad.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Nueva Contraseña / PIN * (Mín. 4 caracteres)
+                </label>
+                <input
+                  type="password"
+                  placeholder="Ingresa la nueva clave..."
+                  value={nuevoPasswordParaUsuario}
+                  onChange={(e) => setNuevoPasswordParaUsuario(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowModalResetPass(false)}
+                  className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={!nuevoPasswordParaUsuario || nuevoPasswordParaUsuario.length < 4}
+                  className="px-6 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:brightness-110 disabled:opacity-50 text-white rounded-xl font-black text-xs uppercase tracking-wider shadow-lg shadow-orange-500/30 cursor-pointer"
+                >
+                  Restablecer Acceso
                 </button>
               </div>
             </form>

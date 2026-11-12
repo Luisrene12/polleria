@@ -157,6 +157,16 @@ export const createUsuario = async (payload) => {
   return response.data;
 };
 
+export const updateUsuario = async (id, payload) => {
+  const response = await api.put(`/super-admin/usuarios/${id}`, payload);
+  return response.data;
+};
+
+export const resetPasswordUsuario = async (id, payload) => {
+  const response = await api.post(`/super-admin/usuarios/${id}/reset-password`, payload);
+  return response.data;
+};
+
 export const toggleUsuarioActivo = async (id) => {
   const response = await api.post(`/super-admin/usuarios/${id}/toggle-activo`);
   return response.data;
