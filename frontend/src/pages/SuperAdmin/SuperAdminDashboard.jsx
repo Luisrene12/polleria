@@ -187,13 +187,23 @@ export default function SuperAdminDashboard() {
     observaciones: '',
   });
 
+  // Filtro temporal para Dashboard (FASE 8)
+  const [filtroTiempoDashboard, setFiltroTiempoDashboard] = useState('este_mes');
+  const [fechaDesdeDashboard, setFechaDesdeDashboard] = useState('');
+  const [fechaHastaDashboard, setFechaHastaDashboard] = useState('');
+
   // Cargar Dashboard principal
-  const loadDashboard = async () => {
+  const loadDashboard = async (overrideParams = {}) => {
     try {
       setLoading(true);
-      const res = await getSuperAdminDashboard();
+      const params = {
+        filtro: overrideParams.filtro || filtroTiempoDashboard,
+        fecha_desde: overrideParams.fecha_desde !== undefined ? overrideParams.fecha_desde : fechaDesdeDashboard,
+        fecha_hasta: overrideParams.fecha_hasta !== undefined ? overrideParams.fecha_hasta : fechaHastaDashboard,
+      };
+      const res = await getSuperAdminDashboard(params);
       setDashboardData(res);
-      setPlanes(res.planes || []);
+      if (res.planes) setPlanes(res.planes);
     } catch (err) {
       console.error(err);
       toast.error('Error al cargar datos del Super Admin');
@@ -930,83 +940,275 @@ export default function SuperAdminDashboard() {
         {/* Content Body */}
         <main className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
           
-          {/* TAB 1: DASHBOARD */}
+          {/* TAB 1: DASHBOARD ANALÍTICO SAAS (15 KPIS REALES & 7 GRÁFICOS - FASE 8) */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6">
-              {/* Tarjetas KPI */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl relative overflow-hidden group">
-                  <div className="flex justify-between items-center text-slate-400">
-                    <span className="text-xs font-bold uppercase tracking-wider">Restaurantes Registrados</span>
-                    <span className="text-2xl">🏢</span>
+
+              {/* ─────────────────────────────────────────────────────────────
+                  BARRA DE FILTROS TEMPORALES PROFESIONAL SAAS
+              ───────────────────────────────────────────────────────────── */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400 mr-2 flex items-center gap-1.5">
+                    <span>📅</span> Período:
+                  </span>
+                  {[
+                    { id: 'hoy',          label: 'Hoy' },
+                    { id: '7d',           label: 'Últimos 7 días' },
+                    { id: '30d',          label: 'Últimos 30 días' },
+                    { id: 'este_mes',     label: 'Este Mes' },
+                    { id: 'mes_anterior', label: 'Mes Anterior' },
+                    { id: 'este_anio',    label: 'Este Año' },
+                    { id: 'personalizado',label: 'Personalizado' },
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      onClick={() => {
+                        setFiltroTiempoDashboard(f.id);
+                        if (f.id !== 'personalizado') {
+                          loadDashboard({ filtro: f.id });
+                        }
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        filtroTiempoDashboard === f.id
+                          ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-md shadow-orange-500/20'
+                          : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Filtro personalizado de fechas */}
+                {filtroTiempoDashboard === 'personalizado' && (
+                  <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 p-1.5 rounded-xl">
+                    <input
+                      type="date"
+                      value={fechaDesdeDashboard}
+                      onChange={(e) => setFechaDesdeDashboard(e.target.value)}
+                      className="bg-transparent text-xs text-white px-2 py-1 focus:outline-none"
+                    />
+                    <span className="text-slate-500 text-xs">al</span>
+                    <input
+                      type="date"
+                      value={fechaHastaDashboard}
+                      onChange={(e) => setFechaHastaDashboard(e.target.value)}
+                      className="bg-transparent text-xs text-white px-2 py-1 focus:outline-none"
+                    />
+                    <button
+                      onClick={() => loadDashboard({ filtro: 'personalizado', fecha_desde: fechaDesdeDashboard, fecha_hasta: fechaHastaDashboard })}
+                      className="px-3 py-1 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-lg cursor-pointer"
+                    >
+                      Filtrar
+                    </button>
                   </div>
-                  <div className="mt-3 flex items-baseline gap-2">
-                    <span className="text-3xl font-black text-white">{kpis.total_negocios || 0}</span>
-                    <span className="text-xs font-bold text-emerald-400">({kpis.negocios_activos || 0} activos)</span>
+                )}
+
+                {/* Rango activo */}
+                {dashboardData?.rango_fechas && (
+                  <div className="text-[11px] font-mono text-slate-400 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800/80">
+                    {dashboardData.rango_fechas.desde} al {dashboardData.rango_fechas.hasta}
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-2 font-medium">
-                    +{kpis.nuevos_30_dias || 0} en los últimos 30 días
+                )}
+              </div>
+
+              {/* ─────────────────────────────────────────────────────────────
+                  LOS 15 INDICADORES PRINCIPALES (4 CUADRANTES ESTRATÉGICOS)
+              ───────────────────────────────────────────────────────────── */}
+              <div className="space-y-4">
+                {/* Cuadrante 1 & 2: Restaurantes & Finanzas */}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
+                  {/* KPI 1 */}
+                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl">
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span className="text-[11px] font-bold uppercase tracking-wider">1. Total Restaurantes</span>
+                      <span className="text-lg">🏢</span>
+                    </div>
+                    <div className="text-2xl font-black text-white mt-2">{kpis.total_restaurantes ?? kpis.total_negocios ?? 0}</div>
+                    <div className="text-[10px] text-slate-500 mt-1 font-bold">Base Total Registrada</div>
+                  </div>
+
+                  {/* KPI 2 */}
+                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl">
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span className="text-[11px] font-bold uppercase tracking-wider">2. Activos</span>
+                      <span className="text-lg text-emerald-400">✅</span>
+                    </div>
+                    <div className="text-2xl font-black text-emerald-400 mt-2">{kpis.restaurantes_activos ?? kpis.negocios_activos ?? 0}</div>
+                    <div className="text-[10px] text-emerald-500/80 mt-1 font-bold">Operando Normal</div>
+                  </div>
+
+                  {/* KPI 3 */}
+                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl">
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span className="text-[11px] font-bold uppercase tracking-wider">3. Suspendidos</span>
+                      <span className="text-lg text-red-400">⛔</span>
+                    </div>
+                    <div className="text-2xl font-black text-red-400 mt-2">{kpis.restaurantes_suspendidos ?? kpis.negocios_suspendidos ?? 0}</div>
+                    <div className="text-[10px] text-red-500/80 mt-1 font-bold">Por Pago / Sanción</div>
+                  </div>
+
+                  {/* KPI 4 */}
+                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl">
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span className="text-[11px] font-bold uppercase tracking-wider">4. En Prueba</span>
+                      <span className="text-lg text-blue-400">⏳</span>
+                    </div>
+                    <div className="text-2xl font-black text-blue-400 mt-2">{kpis.restaurantes_prueba || 0}</div>
+                    <div className="text-[10px] text-blue-500/80 mt-1 font-bold">Período de Gracia</div>
+                  </div>
+
+                  {/* KPI 5 */}
+                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl">
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span className="text-[11px] font-bold uppercase tracking-wider">5. Nuevos (Período)</span>
+                      <span className="text-lg text-purple-400">✨</span>
+                    </div>
+                    <div className="text-2xl font-black text-purple-400 mt-2">+{kpis.nuevos_restaurantes_mes ?? kpis.nuevos_30_dias ?? 0}</div>
+                    <div className="text-[10px] text-purple-500/80 mt-1 font-bold">Adquisición Reciente</div>
                   </div>
                 </div>
 
-                <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl relative overflow-hidden group">
-                  <div className="flex justify-between items-center text-slate-400">
-                    <span className="text-xs font-bold uppercase tracking-wider">Ingresos del Mes</span>
-                    <span className="text-2xl">💵</span>
+                {/* Cuadrante Financiero: KPIs 6, 7, 8, 9, 15 */}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
+                  {/* KPI 6 */}
+                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950/20 border-emerald-900/30">
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span className="text-[11px] font-bold uppercase tracking-wider">6. Ingresos Período</span>
+                      <span className="text-lg text-emerald-400">💰</span>
+                    </div>
+                    <div className="text-2xl font-black text-emerald-400 mt-2">
+                      Bs. {Number(kpis.ingresos_mes || 0).toFixed(2)}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-1 font-bold">Cobros Verificados</div>
                   </div>
-                  <div className="mt-3 flex items-baseline gap-2">
-                    <span className="text-3xl font-black text-white">Bs. {kpis.ingresos_mes?.toFixed(2) || '0.00'}</span>
+
+                  {/* KPI 7 */}
+                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl">
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span className="text-[11px] font-bold uppercase tracking-wider">7. Acumulado Año</span>
+                      <span className="text-lg text-amber-400">📈</span>
+                    </div>
+                    <div className="text-2xl font-black text-amber-400 mt-2">
+                      Bs. {Number(kpis.ingresos_acumulados_anio ?? kpis.ingresos_acumulados ?? 0).toFixed(2)}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-1 font-bold">Total Facturado 2026</div>
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-2 font-medium">
-                    Total Acumulado: Bs. {kpis.ingresos_acumulados?.toFixed(2) || '0.00'}
+
+                  {/* KPI 8 */}
+                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl bg-gradient-to-br from-slate-900 to-orange-950/20 border-orange-900/30">
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span className="text-[11px] font-bold uppercase tracking-wider">8. MRR Recurrente</span>
+                      <span className="text-lg text-orange-400">🔄</span>
+                    </div>
+                    <div className="text-2xl font-black text-orange-400 mt-2">
+                      Bs. {Number(kpis.mrr || 0).toFixed(2)}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-1 font-bold">Mensual Proyectado</div>
+                  </div>
+
+                  {/* KPI 9 */}
+                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl">
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span className="text-[11px] font-bold uppercase tracking-wider">9. ARR Anual</span>
+                      <span className="text-lg text-teal-400">💎</span>
+                    </div>
+                    <div className="text-2xl font-black text-teal-400 mt-2">
+                      Bs. {Number(kpis.arr || 0).toFixed(2)}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-1 font-bold">ARR (MRR × 12)</div>
+                  </div>
+
+                  {/* KPI 15 */}
+                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl">
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span className="text-[11px] font-bold uppercase tracking-wider">15. Total Clientes</span>
+                      <span className="text-lg text-indigo-400">👥</span>
+                    </div>
+                    <div className="text-2xl font-black text-indigo-400 mt-2">
+                      {kpis.total_clientes || 0}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-1 font-bold">Base Global de Clientes</div>
                   </div>
                 </div>
 
-                <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl relative overflow-hidden group">
-                  <div className="flex justify-between items-center text-slate-400">
-                    <span className="text-xs font-bold uppercase tracking-wider">Suscripciones Activas</span>
-                    <span className="text-2xl">⏱️</span>
+                {/* Cuadrante Suscripciones & Pagos: KPIs 10, 11, 12, 13, 14 */}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
+                  {/* KPI 10 */}
+                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl">
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span className="text-[11px] font-bold uppercase tracking-wider">10. Subs Activas</span>
+                      <span className="text-lg text-emerald-400">⏱️</span>
+                    </div>
+                    <div className="text-2xl font-black text-white mt-2">{kpis.suscripciones_activas || 0}</div>
+                    <div className="text-[10px] text-slate-500 mt-1 font-bold">Con Plan Vigente</div>
                   </div>
-                  <div className="mt-3 flex items-baseline gap-2">
-                    <span className="text-3xl font-black text-white">{kpis.suscripciones_activas || 0}</span>
-                    <span className="text-xs font-bold text-amber-400">({kpis.proximas_a_vencer || 0} por vencer)</span>
-                  </div>
-                  <div className="text-[11px] text-slate-500 mt-2 font-medium">
-                    Vencidas sin pagar: {kpis.suscripciones_vencidas || 0}
-                  </div>
-                </div>
 
-                <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl relative overflow-hidden group">
-                  <div className="flex justify-between items-center text-slate-400">
-                    <span className="text-xs font-bold uppercase tracking-wider">Pagos por Verificar</span>
-                    <span className="text-2xl">🔍</span>
+                  {/* KPI 11 */}
+                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl">
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span className="text-[11px] font-bold uppercase tracking-wider">11. Subs Vencidas</span>
+                      <span className="text-lg text-red-400">⚠️</span>
+                    </div>
+                    <div className="text-2xl font-black text-red-400 mt-2">{kpis.suscripciones_vencidas || 0}</div>
+                    <div className="text-[10px] text-red-500/80 mt-1 font-bold">Pendientes de Pago</div>
                   </div>
-                  <div className="mt-3 flex items-baseline gap-2">
-                    <span className="text-3xl font-black text-white">{kpis.pagos_pendientes_count || 0}</span>
-                    <span className="text-xs font-bold text-orange-400">Bs. {kpis.monto_pagos_pendientes?.toFixed(2) || '0.00'}</span>
+
+                  {/* KPI 12 */}
+                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl">
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span className="text-[11px] font-bold uppercase tracking-wider">12. Próximas a Vencer</span>
+                      <span className="text-lg text-amber-400">⏰</span>
+                    </div>
+                    <div className="text-2xl font-black text-amber-400 mt-2">{kpis.suscripciones_proximas ?? kpis.proximas_a_vencer ?? 0}</div>
+                    <div className="text-[10px] text-amber-500/80 mt-1 font-bold">Dentro de 7 Días</div>
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-2 font-medium">
-                    {kpis.pagos_pendientes_count > 0 ? 'Requiere atención' : 'Al día'}
+
+                  {/* KPI 13 */}
+                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl">
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span className="text-[11px] font-bold uppercase tracking-wider">13. Pagos por Verificar</span>
+                      <span className="text-lg text-orange-400">🔍</span>
+                    </div>
+                    <div className="text-2xl font-black text-orange-400 mt-2">{kpis.pagos_pendientes ?? kpis.pagos_pendientes_count ?? 0}</div>
+                    <div className="text-[10px] text-slate-400 mt-1 font-bold">
+                      Bs. {Number(kpis.monto_pagos_pendientes || 0).toFixed(2)}
+                    </div>
+                  </div>
+
+                  {/* KPI 14 */}
+                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl">
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span className="text-[11px] font-bold uppercase tracking-wider">14. Pagos Rechazados</span>
+                      <span className="text-lg text-slate-400">✕</span>
+                    </div>
+                    <div className="text-2xl font-black text-slate-300 mt-2">{kpis.pagos_rechazados || 0}</div>
+                    <div className="text-[10px] text-slate-500 mt-1 font-bold">Vouchers Descartados</div>
                   </div>
                 </div>
               </div>
 
-              {/* Gráficos / Visualizaciones */}
+              {/* ─────────────────────────────────────────────────────────────
+                  LOS 7 GRÁFICOS ANALÍTICOS REALES
+              ───────────────────────────────────────────────────────────── */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                {/* Gráfico de Barras de Ingresos */}
+
+                {/* GRÁFICO 1: Ingresos Mensuales por Suscripciones */}
                 <div className="lg:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
                   <div className="flex justify-between items-center mb-6">
                     <div>
-                      <h3 className="text-base font-black text-white">Ingresos Mensuales por Suscripciones</h3>
-                      <p className="text-xs text-slate-400">Últimos 6 meses de facturación SaaS</p>
+                      <h3 className="text-base font-black text-white flex items-center gap-2">
+                        <span>📊</span> 1. Ingresos Mensuales de Suscripciones
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">Cobros de planes verificados en los últimos 6 meses</p>
                     </div>
                     <span className="text-xs bg-orange-500/20 text-orange-400 font-bold px-3 py-1 rounded-full border border-orange-500/30">
-                      BOB (Bolivianos)
+                      BOB (Bs.)
                     </span>
                   </div>
 
-                  <div className="h-52 flex items-end justify-between gap-3 pt-6 border-b border-slate-800 pb-2">
+                  <div className="h-56 flex items-end justify-between gap-3 pt-6 border-b border-slate-800 pb-2">
                     {(graficos.ingresos_mensuales || []).map((m, idx) => {
                       const maxVal = Math.max(...(graficos.ingresos_mensuales?.map(x => x.monto) || [1]), 100);
                       const heightPercent = Math.max(Math.round((m.monto / maxVal) * 100), 8);
@@ -1015,7 +1217,7 @@ export default function SuperAdminDashboard() {
                           <span className="text-[10px] font-black text-orange-400 opacity-0 group-hover:opacity-100 transition-opacity">
                             Bs. {m.monto}
                           </span>
-                          <div 
+                          <div
                             style={{ height: `${heightPercent}%` }}
                             className="w-full bg-gradient-to-t from-orange-600 via-amber-500 to-amber-400 rounded-t-xl group-hover:brightness-110 transition-all shadow-lg shadow-orange-500/10"
                           />
@@ -1028,70 +1230,224 @@ export default function SuperAdminDashboard() {
                   </div>
                 </div>
 
-                {/* Suscripciones por Plan */}
+                {/* GRÁFICO 3: Suscripciones por Plan */}
                 <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl flex flex-col justify-between">
                   <div>
-                    <h3 className="text-base font-black text-white">Suscripciones por Plan</h3>
-                    <p className="text-xs text-slate-400">Distribución de clientes activos</p>
+                    <h3 className="text-base font-black text-white flex items-center gap-2">
+                      <span>💎</span> 3. Restaurantes por Plan
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">Distribución de clientes por modalidad contratada</p>
 
                     <div className="mt-6 space-y-4">
-                      {(graficos.suscripciones_por_plan || []).map((p, idx) => (
-                        <div key={idx} className="space-y-1.5">
-                          <div className="flex justify-between text-xs font-bold">
-                            <span className="text-slate-300">{p.plan}</span>
-                            <span className="text-white font-black">{p.total} restaurantes</span>
+                      {(graficos.restaurantes_por_plan || []).map((p, idx) => {
+                        const totalNegs = kpis.total_restaurantes || 1;
+                        const pct = Math.round((p.total / totalNegs) * 100);
+                        return (
+                          <div key={idx} className="space-y-1.5">
+                            <div className="flex justify-between text-xs font-bold">
+                              <span className="text-slate-300">{p.plan}</span>
+                              <span className="text-white font-black">{p.total} ({pct}%)</span>
+                            </div>
+                            <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${
+                                  idx === 0 ? 'bg-amber-500' : idx === 1 ? 'bg-orange-500' : 'bg-emerald-500'
+                                }`}
+                                style={{ width: `${Math.max(pct, 6)}%` }}
+                              />
+                            </div>
                           </div>
-                          <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden">
-                            <div 
-                              className={`h-full rounded-full ${
-                                idx === 0 ? 'bg-amber-500' : idx === 1 ? 'bg-orange-500' : 'bg-red-500'
-                              }`}
-                              style={{ width: `${Math.min(p.total * 30 + 10, 100)}%` }}
-                            />
-                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="mt-6 p-4 bg-slate-800/50 rounded-xl border border-slate-700/60 text-xs text-slate-300">
+                    💡 <span className="font-bold">Facturación SaaS:</span> MRR actual de <strong className="text-orange-400">Bs. {Number(kpis.mrr || 0).toFixed(2)}</strong>.
+                  </div>
+                </div>
+
+                {/* GRÁFICO 2: Crecimiento de Restaurantes */}
+                <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <h3 className="text-base font-black text-white flex items-center gap-2">
+                        <span>📈</span> 2. Crecimiento de Restaurantes
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">Evolución acumulada mes a mes</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 mt-4">
+                    {(graficos.crecimiento_restaurantes || []).map((c, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-xs border-b border-slate-800/60 pb-2">
+                        <span className="text-slate-400 font-bold">{c.mes}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono font-black text-white">{c.total} restaurantes</span>
+                          <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded">
+                            Acumulado
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* GRÁFICO 4: Suscripciones Activas vs Vencidas */}
+                <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+                  <div>
+                    <h3 className="text-base font-black text-white flex items-center gap-2">
+                      <span>⏱️</span> 4. Estado de Suscripciones
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">Salud del parque de suscripciones</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 mt-5">
+                    {(graficos.suscripciones_por_estado || []).map((s, idx) => (
+                      <div key={idx} className="p-3 bg-slate-950 border border-slate-800 rounded-xl text-center">
+                        <div className="text-xl font-black text-white">{s.total}</div>
+                        <div className="text-[11px] font-bold uppercase text-slate-400 mt-0.5">{s.estado}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* GRÁFICO 5: Distribución de Ingresos por Plan */}
+                <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+                  <div>
+                    <h3 className="text-base font-black text-white flex items-center gap-2">
+                      <span>💰</span> 5. Ingresos por Plan
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">Recaudación acumulada por cada plan</p>
+                  </div>
+
+                  <div className="space-y-3 mt-5">
+                    {(graficos.distribucion_ingresos_plan || []).map((ip, idx) => (
+                      <div key={idx} className="flex justify-between items-center text-xs p-2.5 bg-slate-950 rounded-xl border border-slate-800/80">
+                        <span className="font-bold text-slate-300">{ip.plan}</span>
+                        <span className="font-mono font-black text-emerald-400">
+                          Bs. {Number(ip.ingreso || 0).toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* GRÁFICO 6 & 7: Nuevos Restaurantes & Cancelaciones */}
+                <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Gráfico 6 */}
+                  <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+                    <h3 className="text-base font-black text-white flex items-center gap-2">
+                      <span>🌱</span> 6. Nuevas Altas por Mes
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">Restaurantes incorporados mensualmente</p>
+
+                    <div className="h-32 flex items-end justify-between gap-3 pt-4 border-b border-slate-800 pb-2 mt-4">
+                      {(graficos.nuevos_por_mes || []).map((npm, idx) => (
+                        <div key={idx} className="flex-1 flex flex-col items-center gap-1.5">
+                          <span className="text-[10px] font-bold text-emerald-400">+{npm.total}</span>
+                          <div
+                            style={{ height: `${Math.max(npm.total * 30, 12)}%` }}
+                            className="w-full bg-emerald-500 rounded-t-lg shadow-sm"
+                          />
+                          <span className="text-[9px] font-bold text-slate-400 uppercase truncate w-full text-center">
+                            {npm.mes}
+                          </span>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  <div className="mt-6 p-4 bg-slate-800/50 rounded-xl border border-slate-700/60 text-xs text-slate-300">
-                    💡 <span className="font-bold">Tip SaaS:</span> Los restaurantes con Plan Profesional generan el 80% de los ingresos recurrentes.
+                  {/* Gráfico 7 */}
+                  <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+                    <h3 className="text-base font-black text-white flex items-center gap-2">
+                      <span>📉</span> 7. Evolución de Cancelaciones / Churn
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">Suspensiones y bajas de servicio registradas</p>
+
+                    <div className="h-32 flex items-end justify-between gap-3 pt-4 border-b border-slate-800 pb-2 mt-4">
+                      {(graficos.cancelaciones_por_mes || []).map((cpm, idx) => (
+                        <div key={idx} className="flex-1 flex flex-col items-center gap-1.5">
+                          <span className="text-[10px] font-bold text-red-400">{cpm.total}</span>
+                          <div
+                            style={{ height: `${Math.max(cpm.total * 30, 8)}%` }}
+                            className="w-full bg-red-500/80 rounded-t-lg shadow-sm"
+                          />
+                          <span className="text-[9px] font-bold text-slate-400 uppercase truncate w-full text-center">
+                            {cpm.mes}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
+
               </div>
 
-              {/* Bitácora de Actividad Reciente */}
+              {/* ─────────────────────────────────────────────────────────────
+                  BITÁCORA DE ACTIVIDAD RECIENTE (7 TIPOS DE ACCIONES AUDITADAS)
+              ───────────────────────────────────────────────────────────── */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-base font-black text-white">Actividad Reciente del Sistema</h3>
-                  <button onClick={() => setActiveTab('auditoria')} className="text-xs font-bold text-orange-400 hover:text-orange-300">
-                    Ver bitácora completa →
+                  <div>
+                    <h3 className="text-base font-black text-white flex items-center gap-2">
+                      <span>📜</span> Actividad Reciente del Superadministrador & Ecosistema
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Registro cronológico de logins, cobros, altas, suspensiones y cambios de planes
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setActiveTab('auditoria')}
+                    className="text-xs font-bold text-orange-400 hover:text-orange-300 transition-colors flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>Ver bitácora completa</span>
+                    <span>→</span>
                   </button>
                 </div>
 
                 <div className="divide-y divide-slate-800">
-                  {(dashboardData?.actividad_reciente || []).map(act => (
-                    <div key={act.id} className="py-3 flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-3">
-                        <span className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-sm">
-                          📌
-                        </span>
-                        <div>
-                          <div className="font-bold text-white">
-                            <span className="text-orange-400 uppercase tracking-wider">{act.accion.replace('_', ' ')}:</span> {act.recurso} #{act.recurso_id || ''}
-                          </div>
-                          <div className="text-[11px] text-slate-400">
-                            Por: <span className="text-slate-200 font-semibold">{act.usuario?.nombre || 'Sistema'}</span> {act.negocio ? `en ${act.negocio.nombre_comercial}` : ''}
+                  {(dashboardData?.actividad_reciente || []).map(act => {
+                    const badgeAction = {
+                      crear_negocio:         { icon: '🏢', label: 'Alta Restaurante', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
+                      suspender_negocio:     { icon: '⛔', label: 'Suspensión',       color: 'bg-red-500/20 text-red-400 border-red-500/30' },
+                      activar_negocio:       { icon: '✅', label: 'Reactivación',     color: 'bg-teal-500/20 text-teal-400 border-teal-500/30' },
+                      archivar_negocio:      { icon: '🗄️', label: 'Archivo Seguro',  color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
+                      cambiar_plan:          { icon: '🔄', label: 'Migración Plan',   color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
+                      registrar_pago:        { icon: '💵', label: 'Pago Registrado',  color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
+                      verificar_pago:        { icon: '✓',  label: 'Pago Verificado',  color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
+                      crear_usuario:         { icon: '👤', label: 'Nuevo Usuario',    color: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' },
+                      reset_password_usuario:{ icon: '🔑', label: 'Reset Clave',      color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
+                    }[act.accion] || { icon: '📌', label: act.accion.replace('_', ' '), color: 'bg-slate-800 text-slate-300 border-slate-700' };
+
+                    return (
+                      <div key={act.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs hover:bg-slate-800/30 px-2 rounded-xl transition-colors">
+                        <div className="flex items-center gap-3">
+                          <span className="w-9 h-9 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-sm shadow-inner">
+                            {badgeAction.icon}
+                          </span>
+                          <div>
+                            <div className="font-bold text-white flex items-center gap-2">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border ${badgeAction.color}`}>
+                                {badgeAction.label}
+                              </span>
+                              <span className="text-slate-300">{act.recurso} #{act.recurso_id || ''}</span>
+                            </div>
+                            <div className="text-[11px] text-slate-400 mt-0.5">
+                              Por: <span className="text-white font-semibold">{act.usuario?.nombre || act.usuario?.username || 'Super Admin'}</span>
+                              {act.negocio ? <span> en <strong className="text-orange-400">{act.negocio.nombre_comercial}</strong></span> : ''}
+                            </div>
                           </div>
                         </div>
+                        <div className="text-slate-500 text-[11px] font-mono sm:text-right">
+                          {new Date(act.creado_en).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}
+                        </div>
                       </div>
-                      <div className="text-slate-500 text-[11px] font-mono">
-                        {new Date(act.creado_en).toLocaleString()}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
+
             </div>
           )}
 

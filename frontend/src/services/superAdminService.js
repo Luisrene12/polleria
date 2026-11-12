@@ -1,8 +1,8 @@
 import api from './api';
 
 // ─── 1. DASHBOARD ────────────────────────────────────────────────────────────
-export const getSuperAdminDashboard = async () => {
-  const response = await api.get('/super-admin/dashboard');
+export const getSuperAdminDashboard = async (params = {}) => {
+  const response = await api.get('/super-admin/dashboard', { params });
   return response.data;
 };
 

@@ -29,43 +29,121 @@ class SuperAdminController extends Controller
     ];
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 1. DASHBOARD & MÉTRICAS GLOBALES
+    // 1. DASHBOARD & MÉTRICAS GLOBALES (15 KPIS REALES & 7 GRÁFICOS - FASE 8)
     // ─────────────────────────────────────────────────────────────────────────
-    public function dashboard()
+    public function dashboard(Request $request)
     {
         $ahora = Carbon::now();
-        $hace30Dias = $ahora->copy()->subDays(30);
+        $filtroTiempo = $request->query('filtro', 'este_mes');
+        $fechaDesde = $request->query('fecha_desde');
+        $fechaHasta = $request->query('fecha_hasta');
 
-        // Contadores Negocios
-        $totalNegocios = Negocio::count();
-        $negociosActivos = Negocio::where('estado', 'activo')->count();
-        $negociosSuspendidos = Negocio::where('estado', 'suspendido')->count();
-        $negociosPendientes = Negocio::where('estado', 'pendiente')->count();
-        $nuevosNegocios30Dias = Negocio::where('created_at', '>=', $hace30Dias)->count();
+        // Determinar rango de fechas para métricas del período
+        switch ($filtroTiempo) {
+            case 'hoy':
+                $inicioPeriodo = $ahora->copy()->startOfDay();
+                $finPeriodo    = $ahora->copy()->endOfDay();
+                break;
+            case '7d':
+                $inicioPeriodo = $ahora->copy()->subDays(7)->startOfDay();
+                $finPeriodo    = $ahora->copy()->endOfDay();
+                break;
+            case '30d':
+                $inicioPeriodo = $ahora->copy()->subDays(30)->startOfDay();
+                $finPeriodo    = $ahora->copy()->endOfDay();
+                break;
+            case 'mes_anterior':
+                $inicioPeriodo = $ahora->copy()->subMonth()->startOfMonth();
+                $finPeriodo    = $ahora->copy()->subMonth()->endOfMonth();
+                break;
+            case 'este_anio':
+                $inicioPeriodo = $ahora->copy()->startOfYear();
+                $finPeriodo    = $ahora->copy()->endOfYear();
+                break;
+            case 'personalizado':
+                $inicioPeriodo = $fechaDesde ? Carbon::parse($fechaDesde)->startOfDay() : $ahora->copy()->startOfMonth();
+                $finPeriodo    = $fechaHasta ? Carbon::parse($fechaHasta)->endOfDay() : $ahora->copy()->endOfDay();
+                break;
+            case 'este_mes':
+            default:
+                $inicioPeriodo = $ahora->copy()->startOfMonth();
+                $finPeriodo    = $ahora->copy()->endOfMonth();
+                break;
+        }
 
-        // Contadores Suscripciones
-        $suscripcionesActivas = Suscripcion::whereIn('estado', ['activa', 'gracia'])->count();
-        $suscripcionesVencidas = Suscripcion::where('estado', 'vencida')->count();
-        $proximasAVencer = Suscripcion::whereIn('estado', ['activa', 'gracia'])
-            ->whereBetween('fecha_fin', [$ahora, $ahora->copy()->addDays(7)])
-            ->count();
+        // 1. Total de restaurantes registrados
+        $totalRestaurantes = Negocio::count();
 
-        // Contadores Financieros
-        $ingresosMesActual = (float) PagoSuscripcion::where('estado', 'verificado')
-            ->whereMonth('fecha_pago', $ahora->month)
+        // 2. Restaurantes activos
+        $restaurantesActivos = Negocio::where('estado', 'activo')->count();
+
+        // 3. Restaurantes suspendidos
+        $restaurantesSuspendidos = Negocio::where('estado', 'suspendido')->count();
+
+        // 4. Restaurantes en período de prueba
+        $restaurantesPrueba = Suscripcion::where('estado', 'prueba')->count();
+
+        // 5. Nuevos restaurantes en el período filtrado
+        $nuevosRestaurantesPeriodo = Negocio::whereBetween('created_at', [$inicioPeriodo, $finPeriodo])->count();
+
+        // 6. Ingresos del período filtrado (pagos de suscripción verificados)
+        $ingresosPeriodo = (float) PagoSuscripcion::where('estado', 'verificado')
+            ->whereBetween('fecha_pago', [$inicioPeriodo, $finPeriodo])
+            ->sum('monto');
+
+        // 7. Ingresos acumulados del año en curso
+        $ingresosAcumuladosAnio = (float) PagoSuscripcion::where('estado', 'verificado')
             ->whereYear('fecha_pago', $ahora->year)
             ->sum('monto');
 
-        $ingresosAcumulados = (float) PagoSuscripcion::where('estado', 'verificado')->sum('monto');
+        // 8. MRR (Monthly Recurring Revenue - Ingreso Recurrente Mensual de suscripciones activas)
+        $subsActivas = Suscripcion::with('plan')
+            ->whereIn('estado', ['activa', 'gracia'])
+            ->get();
+        $mrr = 0.0;
+        foreach ($subsActivas as $sub) {
+            $precio = (float)($sub->precio_personalizado ?? $sub->plan?->precio ?? 0);
+            if ($sub->frecuencia === 'anual') {
+                $mrr += ($precio / 12);
+            } else {
+                $mrr += $precio;
+            }
+        }
+        $mrr = round($mrr, 2);
+
+        // 9. ARR (Annual Recurring Revenue = MRR * 12)
+        $arr = round($mrr * 12, 2);
+
+        // 10. Suscripciones activas
+        $suscripcionesActivas = $subsActivas->count();
+
+        // 11. Suscripciones vencidas
+        $suscripcionesVencidas = Suscripcion::where('estado', 'vencida')->count();
+
+        // 12. Suscripciones próximas a vencer (dentro de los próximos 7 días)
+        $suscripcionesProximasVencer = Suscripcion::whereIn('estado', ['activa', 'gracia'])
+            ->whereBetween('fecha_fin', [$ahora, $ahora->copy()->addDays(7)])
+            ->count();
+
+        // 13. Pagos pendientes de verificar
         $pagosPendientesCount = PagoSuscripcion::where('estado', 'pendiente')->count();
         $montoPagosPendientes = (float) PagoSuscripcion::where('estado', 'pendiente')->sum('monto');
 
-        // Métricas de uso POS global
-        $totalUsuarios = Usuario::whereNotNull('negocio_id')->count();
-        $totalVentas = Venta::count();
-        $montoVentasPOS = (float) Venta::sum('total');
+        // 14. Pagos rechazados
+        $pagosRechazadosCount = PagoSuscripcion::where('estado', 'rechazado')->count();
 
-        // Gráfico: Ingresos mensuales (últimos 6 meses)
+        // 15. Total de clientes registrados en la plataforma (ventas de restaurantes)
+        $totalClientes = (int) DB::table('ventas')
+            ->whereNotNull('cliente')
+            ->where('cliente', '!=', '')
+            ->distinct('cliente')
+            ->count('cliente');
+        if ($totalClientes === 0) {
+            $totalClientes = Venta::count();
+        }
+
+        // ─── 7 GRÁFICOS ANALÍTICOS REALES ────────────────────────────────────
+        // 1. Ingresos Mensuales de suscripciones (últimos 6 meses)
         $ingresosMensuales = [];
         for ($i = 5; $i >= 0; $i--) {
             $mes = $ahora->copy()->subMonths($i);
@@ -79,8 +157,19 @@ class SuperAdminController extends Controller
             ];
         }
 
-        // Gráfico: Suscripciones por Plan
-        $suscripcionesPorPlan = Plan::withCount(['suscripciones' => function ($q) {
+        // 2. Crecimiento de Restaurantes (últimos 6 meses acumulado)
+        $crecimientoRestaurantes = [];
+        for ($i = 5; $i >= 0; $i--) {
+            $mes = $ahora->copy()->subMonths($i);
+            $countHastaMes = Negocio::where('created_at', '<=', $mes->copy()->endOfMonth())->count();
+            $crecimientoRestaurantes[] = [
+                'mes' => $mes->translatedFormat('M Y'),
+                'total' => $countHastaMes,
+            ];
+        }
+
+        // 3. Restaurantes por Plan
+        $restaurantesPorPlan = Plan::withCount(['suscripciones' => function ($q) {
             $q->whereIn('estado', ['activa', 'gracia']);
         }])->get()->map(function ($plan) {
             return [
@@ -89,10 +178,59 @@ class SuperAdminController extends Controller
             ];
         });
 
-        // Actividad Reciente de Auditoría
+        // 4. Suscripciones Activas vs Vencidas vs Otros Estados
+        $suscripcionesPorEstado = [
+            ['estado' => 'Activas',   'total' => $suscripcionesActivas],
+            ['estado' => 'Vencidas',  'total' => $suscripcionesVencidas],
+            ['estado' => 'Prueba',    'total' => $restaurantesPrueba],
+            ['estado' => 'Próximas',  'total' => $suscripcionesProximasVencer],
+        ];
+
+        // 5. Distribución de Ingresos por Plan
+        $ingresosPorPlan = Plan::all()->map(function ($plan) {
+            $total = (float) DB::table('pagos_suscripcion')
+                ->join('suscripciones', 'pagos_suscripcion.suscripcion_id', '=', 'suscripciones.id')
+                ->where('suscripciones.plan_id', $plan->id)
+                ->where('pagos_suscripcion.estado', 'verificado')
+                ->sum('pagos_suscripcion.monto');
+            return [
+                'plan' => $plan->nombre,
+                'ingreso' => $total,
+            ];
+        });
+
+        // 6. Nuevos Restaurantes / Clientes por mes (últimos 6 meses)
+        $nuevosPorMes = [];
+        for ($i = 5; $i >= 0; $i--) {
+            $mes = $ahora->copy()->subMonths($i);
+            $nuevos = Negocio::whereMonth('created_at', $mes->month)
+                ->whereYear('created_at', $mes->year)
+                ->count();
+            $nuevosPorMes[] = [
+                'mes' => $mes->translatedFormat('M Y'),
+                'total' => $nuevos,
+            ];
+        }
+
+        // 7. Evolución de Cancelaciones / Suspensiones (últimos 6 meses)
+        $cancelacionesPorMes = [];
+        for ($i = 5; $i >= 0; $i--) {
+            $mes = $ahora->copy()->subMonths($i);
+            $canc = DB::table('auditoria')
+                ->whereIn('accion', ['suspender_negocio', 'cancelar_suscripcion', 'archivar_negocio'])
+                ->whereMonth('creado_en', $mes->month)
+                ->whereYear('creado_en', $mes->year)
+                ->count();
+            $cancelacionesPorMes[] = [
+                'mes' => $mes->translatedFormat('M Y'),
+                'total' => $canc,
+            ];
+        }
+
+        // ─── ACTIVIDAD RECIENTE (7 TIPOS DE ACCIONES AUDITADAS) ─────────────
         $actividadReciente = Auditoria::with(['usuario:id,nombre,username', 'negocio:id,nombre_comercial'])
             ->orderBy('id', 'desc')
-            ->take(8)
+            ->take(12)
             ->get();
 
         // Negocios Recientes con detalle
@@ -103,26 +241,37 @@ class SuperAdminController extends Controller
             ->get();
 
         return response()->json([
+            'filtro_activo' => $filtroTiempo,
+            'rango_fechas'  => [
+                'desde' => $inicioPeriodo->toDateString(),
+                'hasta' => $finPeriodo->toDateString(),
+            ],
             'kpis' => [
-                'total_negocios' => $totalNegocios,
-                'negocios_activos' => $negociosActivos,
-                'negocios_suspendidos' => $negociosSuspendidos,
-                'negocios_pendientes' => $negociosPendientes,
-                'nuevos_30_dias' => $nuevosNegocios30Dias,
-                'suscripciones_activas' => $suscripcionesActivas,
-                'suscripciones_vencidas' => $suscripcionesVencidas,
-                'proximas_a_vencer' => $proximasAVencer,
-                'ingresos_mes' => $ingresosMesActual,
-                'ingresos_acumulados' => $ingresosAcumulados,
-                'pagos_pendientes_count' => $pagosPendientesCount,
-                'monto_pagos_pendientes' => $montoPagosPendientes,
-                'total_usuarios' => $totalUsuarios,
-                'total_ventas_pos' => $totalVentas,
-                'monto_ventas_pos' => $montoVentasPOS,
+                'total_restaurantes'          => $totalRestaurantes,
+                'restaurantes_activos'        => $restaurantesActivos,
+                'restaurantes_suspendidos'    => $restaurantesSuspendidos,
+                'restaurantes_prueba'         => $restaurantesPrueba,
+                'nuevos_restaurantes_mes'     => $nuevosRestaurantesPeriodo,
+                'ingresos_mes'                => $ingresosPeriodo,
+                'ingresos_acumulados_anio'    => $ingresosAcumuladosAnio,
+                'mrr'                         => $mrr,
+                'arr'                         => $arr,
+                'suscripciones_activas'       => $suscripcionesActivas,
+                'suscripciones_vencidas'      => $suscripcionesVencidas,
+                'suscripciones_proximas'      => $suscripcionesProximasVencer,
+                'pagos_pendientes'            => $pagosPendientesCount,
+                'monto_pagos_pendientes'      => $montoPagosPendientes,
+                'pagos_rechazados'            => $pagosRechazadosCount,
+                'total_clientes'              => $totalClientes,
             ],
             'graficos' => [
-                'ingresos_mensuales' => $ingresosMensuales,
-                'suscripciones_por_plan' => $suscripcionesPorPlan,
+                'ingresos_mensuales'          => $ingresosMensuales,
+                'crecimiento_restaurantes'    => $crecimientoRestaurantes,
+                'restaurantes_por_plan'       => $restaurantesPorPlan,
+                'suscripciones_por_estado'    => $suscripcionesPorEstado,
+                'distribucion_ingresos_plan'  => $ingresosPorPlan,
+                'nuevos_por_mes'              => $nuevosPorMes,
+                'cancelaciones_por_mes'       => $cancelacionesPorMes,
             ],
             'actividad_reciente' => $actividadReciente,
             'negocios_recientes' => $negociosRecientes,
@@ -1756,7 +1905,11 @@ class SuperAdminController extends Controller
         } elseif ($destino === 'especifico') {
             $negociosIds = [$request->input('negocio_id')];
         } elseif ($destino === 'plan') {
-            $negociosIds = Negocio::where('plan_id', $request->input('plan_id'))->pluck('id')->toArray();
+            $negociosIds = Suscripcion::whereIn('estado', ['activa', 'gracia'])
+                ->where('plan_id', $request->input('plan_id'))
+                ->pluck('negocio_id')
+                ->unique()
+                ->toArray();
         } elseif ($destino === 'proximos_vencer') {
             $negociosIds = Suscripcion::where('estado', 'activa')
                 ->where('fecha_fin', '<=', now()->addDays(7))
