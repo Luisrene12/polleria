@@ -14,6 +14,8 @@ import {
   getPlanes,
   createPlan,
   updatePlan,
+  duplicarPlan,
+  togglePlanActivo,
   getSuscripciones,
   renovarSuscripcion,
   getPagos,
@@ -72,6 +74,26 @@ export default function SuperAdminDashboard() {
   const [ticketSeleccionado, setTicketSeleccionado] = useState(null);
   const [respuestaTicket, setRespuestaTicket] = useState('');
   const [modalDetalleTab, setModalDetalleTab] = useState('general');
+
+  // Modales y formularios de Planes
+  const [showModalPlan, setShowModalPlan] = useState(false);
+  const [editandoPlan, setEditandoPlan] = useState(null);
+  const [formPlan, setFormPlan] = useState({
+    nombre: '',
+    descripcion: '',
+    precio: '',
+    precio_anual: '',
+    moneda: 'BOB',
+    frecuencia: 'mensual',
+    dias_prueba: 15,
+    limite_usuarios: 5,
+    limite_productos: 200,
+    limite_sucursales: 1,
+    limite_almacenamiento_mb: 512,
+    activo: true,
+    orden: 1,
+    funcionalidades: [],
+  });
 
   // Formularios
   const [nuevoNegocio, setNuevoNegocio] = useState({
@@ -325,6 +347,93 @@ export default function SuperAdminDashboard() {
       setNegocioSeleccionado(res);
     } catch (err) {
       toast.error('Error al actualizar módulo');
+    }
+  };
+
+  // ─── GESTIÓN DE PLANES SAAS ────────────────────────────────────────────────
+  const handleAbrirModalPlan = async (plan = null) => {
+    try {
+      const allMods = await getModulosGlobales();
+      setModulos(allMods);
+    } catch {}
+    if (plan) {
+      setEditandoPlan(plan);
+      setFormPlan({
+        nombre: plan.nombre || '',
+        descripcion: plan.descripcion || '',
+        precio: plan.precio || '',
+        precio_anual: plan.precio_anual || (plan.precio ? (plan.precio * 10).toFixed(2) : ''),
+        moneda: plan.moneda || 'BOB',
+        frecuencia: plan.frecuencia || 'mensual',
+        dias_prueba: plan.dias_prueba ?? 15,
+        limite_usuarios: plan.limite_usuarios || 5,
+        limite_productos: plan.limite_productos || 200,
+        limite_sucursales: plan.limite_sucursales || 1,
+        limite_almacenamiento_mb: plan.limite_almacenamiento_mb || 512,
+        activo: plan.activo ?? true,
+        orden: plan.orden || 1,
+        funcionalidades: (plan.funcionalidades || []).map(f => f.id),
+      });
+    } else {
+      setEditandoPlan(null);
+      setFormPlan({
+        nombre: '',
+        descripcion: '',
+        precio: '',
+        precio_anual: '',
+        moneda: 'BOB',
+        frecuencia: 'mensual',
+        dias_prueba: 15,
+        limite_usuarios: 5,
+        limite_productos: 200,
+        limite_sucursales: 1,
+        limite_almacenamiento_mb: 512,
+        activo: true,
+        orden: planes.length + 1,
+        funcionalidades: modulos.map(m => m.id),
+      });
+    }
+    setShowModalPlan(true);
+  };
+
+  const handleGuardarPlan = async (e) => {
+    e.preventDefault();
+    try {
+      if (editandoPlan) {
+        await updatePlan(editandoPlan.id, formPlan);
+        toast.success('Plan SaaS actualizado exitosamente');
+      } else {
+        await createPlan(formPlan);
+        toast.success('Nuevo plan SaaS creado exitosamente');
+      }
+      setShowModalPlan(false);
+      const res = await getPlanes();
+      setPlanes(res);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Error al guardar el plan');
+    }
+  };
+
+  const handleDuplicarPlan = async (id, nombre) => {
+    if (!confirm(`¿Duplicar el plan "${nombre}"? Se creará una copia inactiva lista para configurar.`)) return;
+    try {
+      const res = await duplicarPlan(id);
+      toast.success(res.message);
+      const updated = await getPlanes();
+      setPlanes(updated);
+    } catch (err) {
+      toast.error('Error al duplicar plan');
+    }
+  };
+
+  const handleTogglePlan = async (id) => {
+    try {
+      const res = await togglePlanActivo(id);
+      toast.success(res.message);
+      const updated = await getPlanes();
+      setPlanes(updated);
+    } catch (err) {
+      toast.error('Error al cambiar estado del plan');
     }
   };
 
@@ -1124,40 +1233,113 @@ export default function SuperAdminDashboard() {
           {/* TAB 4: PLANES SAAS */}
           {activeTab === 'planes' && (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-xl">
+                <div>
+                  <h3 className="text-base font-black text-white">Planes Comerciales SaaS</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Diseña, ajusta precios y configura límites de planes. Las modificaciones no alteran retroactivamente suscripciones vigentes.
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleAbrirModalPlan()}
+                  className="px-5 py-2.5 bg-gradient-to-r from-orange-500 to-amber-600 hover:brightness-110 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-lg shadow-orange-500/30 cursor-pointer shrink-0"
+                >
+                  <span>＋</span> Nuevo Plan SaaS
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {planes.map(p => (
-                  <div key={p.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between hover:border-orange-500/40 transition-all">
+                  <div key={p.id} className={`bg-slate-900 border rounded-2xl p-6 shadow-xl flex flex-col justify-between transition-all ${
+                    p.activo ? 'border-slate-800 hover:border-orange-500/50' : 'border-slate-800/50 opacity-60'
+                  }`}>
                     <div>
                       <div className="flex justify-between items-center">
-                        <span className="text-xs font-black uppercase text-orange-400 tracking-wider">Plan #{p.orden}</span>
-                        <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                          {p.suscripciones_count || 0} suscripciones
-                        </span>
+                        <span className="text-[10px] font-black uppercase text-orange-400 tracking-wider">Plan #{p.orden}</span>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                            p.activo ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                          }`}>
+                            {p.activo ? 'Activo' : 'Inactivo'}
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-300 bg-slate-800 px-2 py-0.5 rounded-full">
+                            {p.suscripciones_count || 0} restaurantes
+                          </span>
+                        </div>
                       </div>
                       <h4 className="text-xl font-black text-white mt-2">{p.nombre}</h4>
-                      <p className="text-xs text-slate-400 mt-2 min-h-[40px]">{p.descripcion}</p>
+                      <p className="text-xs text-slate-400 mt-1.5 min-h-[38px]">{p.descripcion || 'Sin descripción'}</p>
                       
-                      <div className="mt-4 flex items-baseline gap-1">
-                        <span className="text-3xl font-black text-white">Bs. {p.precio}</span>
-                        <span className="text-xs text-slate-500 uppercase">/ {p.frecuencia}</span>
+                      <div className="mt-4 flex flex-col gap-1">
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-3xl font-black text-white">Bs. {Number(p.precio).toFixed(2)}</span>
+                          <span className="text-xs text-slate-500 uppercase">/ mes</span>
+                        </div>
+                        {p.precio_anual > 0 && (
+                          <span className="text-xs font-bold text-emerald-400">
+                            Bs. {Number(p.precio_anual).toFixed(2)} / año (Ahorro comercial)
+                          </span>
+                        )}
                       </div>
 
-                      <div className="mt-6 space-y-2 border-t border-slate-800 pt-4 text-xs text-slate-300">
-                        <div>👥 Máximo: <strong className="text-white">{p.limite_usuarios} usuarios</strong></div>
-                        <div>🏬 Sucursales: <strong className="text-white">{p.limite_sucursales}</strong></div>
-                        <div>🎁 Días de prueba: <strong className="text-white">{p.dias_prueba || 15} días</strong></div>
+                      <div className="mt-5 space-y-2 border-t border-slate-800 pt-4 text-xs text-slate-300">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">👥 Usuarios máx:</span>
+                          <strong className="text-white">{p.limite_usuarios} usuarios</strong>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">📦 Productos máx:</span>
+                          <strong className="text-white">{p.limite_productos || 200} platos</strong>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">🏬 Sucursales máx:</span>
+                          <strong className="text-white">{p.limite_sucursales} local(es)</strong>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">💾 Almacenamiento:</span>
+                          <strong className="text-white">{p.limite_almacenamiento_mb || 512} MB</strong>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">🎁 Prueba gratuita:</span>
+                          <strong className="text-white">{p.dias_prueba || 15} días</strong>
+                        </div>
                       </div>
 
                       <div className="mt-4 border-t border-slate-800 pt-3">
-                        <span className="text-[11px] font-bold uppercase text-slate-400">Módulos incluidos:</span>
-                        <div className="flex flex-wrap gap-1.5 mt-2">
+                        <span className="text-[10px] font-bold uppercase text-slate-400">Módulos ({p.funcionalidades?.length || 0} incluidos):</span>
+                        <div className="flex flex-wrap gap-1 mt-2 max-h-24 overflow-y-auto no-scrollbar">
                           {(p.funcionalidades || []).map(f => (
-                            <span key={f.id} className="text-[10px] px-2 py-0.5 bg-slate-800 rounded text-slate-300 font-medium">
+                            <span key={f.id} className="text-[9px] px-2 py-0.5 bg-slate-950 border border-slate-800 rounded text-slate-300 font-medium">
                               ✓ {f.nombre}
                             </span>
                           ))}
                         </div>
                       </div>
+                    </div>
+
+                    <div className="mt-6 pt-4 border-t border-slate-800 flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => handleAbrirModalPlan(p)}
+                        className="flex-1 py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-bold text-xs transition-all cursor-pointer"
+                      >
+                        ✏️ Editar
+                      </button>
+                      <button
+                        onClick={() => handleDuplicarPlan(p.id, p.nombre)}
+                        className="py-1.5 px-3 bg-slate-800 hover:bg-amber-600 text-slate-200 hover:text-white rounded-lg font-bold text-xs transition-all cursor-pointer"
+                        title="Duplicar este plan"
+                      >
+                        📋 Clonar
+                      </button>
+                      <button
+                        onClick={() => handleTogglePlan(p.id)}
+                        className={`py-1.5 px-3 rounded-lg font-bold text-xs transition-all cursor-pointer ${
+                          p.activo ? 'bg-red-950/40 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/30' : 'bg-emerald-950/40 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30'
+                        }`}
+                        title={p.activo ? 'Desactivar plan' : 'Activar plan'}
+                      >
+                        {p.activo ? '⛔' : '✅'}
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -2250,6 +2432,201 @@ export default function SuperAdminDashboard() {
                   className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-xl shadow-lg transition-all"
                 >
                   Enviar Respuesta
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          6. MODAL: CREAR / EDITAR PLAN SAAS
+      ───────────────────────────────────────────────────────────── */}
+      {showModalPlan && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full p-6 sm:p-7 max-h-[92vh] flex flex-col shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-4 shrink-0">
+              <div>
+                <h3 className="text-lg font-black text-white">
+                  {editandoPlan ? `Editar Plan: ${editandoPlan.nombre}` : 'Diseñar Nuevo Plan Comercial SaaS'}
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Configura tarifas, capacidades y funcionalidades incluidas.
+                </p>
+              </div>
+              <button onClick={() => setShowModalPlan(false)} className="text-slate-400 hover:text-white text-xl cursor-pointer">✕</button>
+            </div>
+
+            <form onSubmit={handleGuardarPlan} className="flex-1 overflow-y-auto space-y-4 py-4 pr-1">
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Nombre Comercial del Plan *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: Plan Básico / Plan Sucursales Pro"
+                  value={formPlan.nombre}
+                  onChange={(e) => setFormPlan({ ...formPlan, nombre: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-orange-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Descripción / Propuesta de Valor</label>
+                <textarea
+                  rows="2"
+                  placeholder="Ideal para cadenas, pollerías de alto flujo..."
+                  value={formPlan.descripcion}
+                  onChange={(e) => setFormPlan({ ...formPlan, descripcion: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-xs text-white focus:outline-none focus:border-orange-500 resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-amber-400 uppercase tracking-wider block mb-1">Precio Mensual (Bs.) *</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    required
+                    min="0"
+                    placeholder="Ej: 250.00"
+                    value={formPlan.precio}
+                    onChange={(e) => setFormPlan({ ...formPlan, precio: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white font-black focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-emerald-400 uppercase tracking-wider block mb-1">Precio Anual (Bs. Opcional)</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    placeholder="Ej: 2500.00"
+                    value={formPlan.precio_anual}
+                    onChange={(e) => setFormPlan({ ...formPlan, precio_anual: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white font-black focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-400 uppercase block mb-1">Usuarios Máx</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    value={formPlan.limite_usuarios}
+                    onChange={(e) => setFormPlan({ ...formPlan, limite_usuarios: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-400 uppercase block mb-1">Platos Máx</label>
+                  <input
+                    type="number"
+                    required
+                    min="10"
+                    value={formPlan.limite_productos}
+                    onChange={(e) => setFormPlan({ ...formPlan, limite_productos: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-400 uppercase block mb-1">Sucursales</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    value={formPlan.limite_sucursales}
+                    onChange={(e) => setFormPlan({ ...formPlan, limite_sucursales: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-400 uppercase block mb-1">Disco (MB)</label>
+                  <input
+                    type="number"
+                    required
+                    min="50"
+                    value={formPlan.limite_almacenamiento_mb}
+                    onChange={(e) => setFormPlan({ ...formPlan, limite_almacenamiento_mb: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-400 uppercase block mb-1">Días de Prueba Gratuita</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={formPlan.dias_prueba}
+                    onChange={(e) => setFormPlan({ ...formPlan, dias_prueba: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+                <div className="flex items-center gap-3 pt-5">
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formPlan.activo}
+                      onChange={(e) => setFormPlan({ ...formPlan, activo: e.target.checked })}
+                      className="w-4 h-4 rounded text-orange-500 bg-slate-950 border-slate-800 focus:ring-0 cursor-pointer"
+                    />
+                    <span>Plan Disponible para Nuevos Restaurantes</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Selector de Módulos Incluidos */}
+              <div className="pt-3 border-t border-slate-800">
+                <label className="text-xs font-black text-orange-400 uppercase tracking-wider block mb-2">
+                  Módulos y Funcionalidades Incluidas en este Plan:
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto no-scrollbar p-1">
+                  {modulos.map(m => {
+                    const isChecked = formPlan.funcionalidades.includes(m.id);
+                    return (
+                      <label key={m.id} className={`p-2.5 rounded-xl border flex items-center justify-between text-xs cursor-pointer transition-all ${
+                        isChecked ? 'bg-orange-500/10 border-orange-500/40 text-white' : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                      }`}>
+                        <div>
+                          <div className="font-bold">{m.nombre}</div>
+                          <div className="text-[10px] text-slate-500 capitalize">{m.modulo}</div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormPlan({ ...formPlan, funcionalidades: [...formPlan.funcionalidades, m.id] });
+                            } else {
+                              setFormPlan({ ...formPlan, funcionalidades: formPlan.funcionalidades.filter(x => x !== m.id) });
+                            }
+                          }}
+                          className="w-4 h-4 text-orange-500 rounded bg-slate-900 border-slate-700 cursor-pointer"
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-800 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowModalPlan(false)}
+                  className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-amber-600 hover:brightness-110 text-white rounded-xl font-black text-xs uppercase tracking-wider shadow-lg shadow-orange-500/30 cursor-pointer"
+                >
+                  {editandoPlan ? 'Guardar Cambios' : 'Crear Plan'}
                 </button>
               </div>
             </form>

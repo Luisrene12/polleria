@@ -70,6 +70,8 @@ Route::prefix('super-admin')->middleware(['auth:sanctum', 'super_admin'])->group
     Route::get('/planes', [SuperAdminController::class, 'getPlanes']);
     Route::post('/planes', [SuperAdminController::class, 'createPlan']);
     Route::put('/planes/{id}', [SuperAdminController::class, 'updatePlan']);
+    Route::post('/planes/{id}/duplicar', [SuperAdminController::class, 'duplicarPlan']);
+    Route::post('/planes/{id}/toggle-activo', [SuperAdminController::class, 'togglePlanActivo']);
     Route::get('/suscripciones', [SuperAdminController::class, 'getSuscripciones']);
     Route::post('/suscripciones/{id}/renovar', [SuperAdminController::class, 'renovarSuscripcion']);
 

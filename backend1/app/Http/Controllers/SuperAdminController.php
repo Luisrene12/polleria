@@ -750,22 +750,37 @@ class SuperAdminController extends Controller
     public function createPlan(Request $request)
     {
         $request->validate([
-            'nombre'            => 'required|string|max:100',
-            'descripcion'       => 'nullable|string',
-            'precio'            => 'required|numeric|min:0',
-            'moneda'            => 'required|string|max:10',
-            'frecuencia'        => 'required|in:mensual,trimestral,semestral,anual',
-            'limite_usuarios'   => 'required|integer|min:1',
-            'limite_sucursales' => 'required|integer|min:1',
-            'funcionalidades'   => 'nullable|array',
+            'nombre'                   => 'required|string|max:100',
+            'descripcion'              => 'nullable|string',
+            'precio'                   => 'required|numeric|min:0',
+            'precio_anual'             => 'nullable|numeric|min:0',
+            'moneda'                   => 'required|string|max:10',
+            'frecuencia'               => 'required|in:mensual,trimestral,semestral,anual',
+            'dias_prueba'              => 'nullable|integer|min:0',
+            'limite_usuarios'          => 'required|integer|min:1',
+            'limite_productos'         => 'nullable|integer|min:1',
+            'limite_sucursales'        => 'required|integer|min:1',
+            'limite_almacenamiento_mb' => 'nullable|integer|min:10',
+            'funcionalidades'          => 'nullable|array',
         ]);
 
         DB::beginTransaction();
         try {
-            $plan = Plan::create($request->only([
-                'nombre', 'descripcion', 'precio', 'moneda', 'frecuencia',
-                'limite_usuarios', 'limite_sucursales', 'dias_prueba', 'orden', 'activo'
-            ]));
+            $plan = Plan::create([
+                'nombre'                   => trim($request->input('nombre')),
+                'descripcion'              => $request->input('descripcion'),
+                'precio'                   => (float) $request->input('precio'),
+                'precio_anual'             => (float) ($request->input('precio_anual') ?: ($request->input('precio') * 10)),
+                'moneda'                   => $request->input('moneda', 'BOB'),
+                'frecuencia'               => $request->input('frecuencia', 'mensual'),
+                'dias_prueba'              => (int) ($request->input('dias_prueba') ?? 15),
+                'limite_usuarios'          => (int) $request->input('limite_usuarios'),
+                'limite_productos'         => (int) ($request->input('limite_productos') ?? 200),
+                'limite_sucursales'        => (int) $request->input('limite_sucursales', 1),
+                'limite_almacenamiento_mb' => (int) ($request->input('limite_almacenamiento_mb') ?? 512),
+                'activo'                   => $request->boolean('activo', true),
+                'orden'                    => (int) ($request->input('orden') ?? 0),
+            ]);
 
             if ($request->has('funcionalidades')) {
                 $plan->funcionalidades()->sync($request->input('funcionalidades'));
@@ -777,11 +792,11 @@ class SuperAdminController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Plan SaaS creado exitosamente.',
-                'plan' => $plan->load('funcionalidades')
+                'plan'    => $plan->load('funcionalidades')
             ], 201);
         } catch (\Throwable $e) {
             DB::rollBack();
-            return response()->json(['message' => $e->getMessage()], 500);
+            return response()->json(['message' => 'Error al crear plan: ' . $e->getMessage()], 500);
         }
     }
 
@@ -789,30 +804,126 @@ class SuperAdminController extends Controller
     {
         $plan = Plan::findOrFail($id);
         $request->validate([
-            'nombre'            => 'required|string|max:100',
-            'precio'            => 'required|numeric|min:0',
-            'limite_usuarios'   => 'required|integer|min:1',
-            'limite_sucursales' => 'required|integer|min:1',
-            'activo'            => 'required|boolean',
-            'funcionalidades'   => 'nullable|array',
+            'nombre'                   => 'required|string|max:100',
+            'precio'                   => 'required|numeric|min:0',
+            'precio_anual'             => 'nullable|numeric|min:0',
+            'limite_usuarios'          => 'required|integer|min:1',
+            'limite_productos'         => 'nullable|integer|min:1',
+            'limite_sucursales'        => 'required|integer|min:1',
+            'limite_almacenamiento_mb' => 'nullable|integer|min:10',
+            'funcionalidades'          => 'nullable|array',
         ]);
 
         $datosAnteriores = $plan->toArray();
-        $plan->update($request->only([
-            'nombre', 'descripcion', 'precio', 'moneda', 'frecuencia',
-            'limite_usuarios', 'limite_sucursales', 'dias_prueba', 'orden', 'activo'
-        ]));
+
+        $plan->update([
+            'nombre'                   => trim($request->input('nombre')),
+            'descripcion'              => $request->input('descripcion', $plan->descripcion),
+            'precio'                   => (float) $request->input('precio'),
+            'precio_anual'             => $request->has('precio_anual') ? (float)$request->input('precio_anual') : $plan->precio_anual,
+            'moneda'                   => $request->input('moneda', $plan->moneda),
+            'frecuencia'               => $request->input('frecuencia', $plan->frecuencia),
+            'dias_prueba'              => $request->has('dias_prueba') ? (int)$request->input('dias_prueba') : $plan->dias_prueba,
+            'limite_usuarios'          => (int) $request->input('limite_usuarios'),
+            'limite_productos'         => $request->has('limite_productos') ? (int)$request->input('limite_productos') : $plan->limite_productos,
+            'limite_sucursales'        => (int) $request->input('limite_sucursales'),
+            'limite_almacenamiento_mb' => $request->has('limite_almacenamiento_mb') ? (int)$request->input('limite_almacenamiento_mb') : $plan->limite_almacenamiento_mb,
+            'activo'                   => $request->has('activo') ? $request->boolean('activo') : $plan->activo,
+            'orden'                    => $request->has('orden') ? (int)$request->input('orden') : $plan->orden,
+        ]);
 
         if ($request->has('funcionalidades')) {
             $plan->funcionalidades()->sync($request->input('funcionalidades'));
         }
 
-        AuditoriaService::registrar('actualizar_plan', 'planes', $plan->id, null, $datosAnteriores, $plan->toArray());
+        AuditoriaService::registrar(
+            'actualizar_plan',
+            'planes',
+            $plan->id,
+            null,
+            $datosAnteriores,
+            $plan->toArray(),
+            'Modificación de características del plan (suscripciones existentes preservan sus acuerdos)'
+        );
 
         return response()->json([
             'success' => true,
-            'message' => 'Plan actualizado correctamente.',
-            'plan' => $plan->load('funcionalidades')
+            'message' => 'Plan actualizado correctamente sin alterar suscripciones vigentes.',
+            'plan'    => $plan->load('funcionalidades')
+        ]);
+    }
+
+    public function duplicarPlan($id)
+    {
+        $original = Plan::with('funcionalidades')->findOrFail($id);
+
+        DB::beginTransaction();
+        try {
+            $nuevoPlan = Plan::create([
+                'nombre'                   => $original->nombre . ' (Copia)',
+                'descripcion'              => $original->descripcion,
+                'precio'                   => $original->precio,
+                'precio_anual'             => $original->precio_anual,
+                'moneda'                   => $original->moneda,
+                'frecuencia'               => $original->frecuencia,
+                'dias_prueba'              => $original->dias_prueba,
+                'limite_usuarios'          => $original->limite_usuarios,
+                'limite_productos'         => $original->limite_productos,
+                'limite_sucursales'        => $original->limite_sucursales,
+                'limite_almacenamiento_mb' => $original->limite_almacenamiento_mb,
+                'activo'                   => false,
+                'orden'                    => $original->orden + 1,
+            ]);
+
+            $funcIds = $original->funcionalidades->pluck('id')->toArray();
+            if (!empty($funcIds)) {
+                $nuevoPlan->funcionalidades()->sync($funcIds);
+            }
+
+            AuditoriaService::registrar(
+                'duplicar_plan',
+                'planes',
+                $nuevoPlan->id,
+                null,
+                ['plan_origen_id' => $original->id],
+                $nuevoPlan->toArray(),
+                "Plan duplicado a partir de {$original->nombre}"
+            );
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Plan '{$nuevoPlan->nombre}' duplicado exitosamente.",
+                'plan'    => $nuevoPlan->load('funcionalidades')
+            ], 201);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Error al duplicar plan: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function togglePlanActivo($id)
+    {
+        $plan = Plan::findOrFail($id);
+        $estadoAnterior = $plan->activo;
+        $plan->activo = !$estadoAnterior;
+        $plan->save();
+
+        AuditoriaService::registrar(
+            'toggle_estado_plan',
+            'planes',
+            $plan->id,
+            null,
+            ['activo' => $estadoAnterior],
+            ['activo' => $plan->activo],
+            "Plan comercial " . ($plan->activo ? 'activado' : 'desactivado')
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => "Plan '{$plan->nombre}' " . ($plan->activo ? 'ACTIVADO' : 'DESACTIVADO') . " correctamente.",
+            'plan'    => $plan
         ]);
     }
 

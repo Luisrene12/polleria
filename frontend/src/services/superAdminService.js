@@ -79,6 +79,16 @@ export const updatePlan = async (id, payload) => {
   return response.data;
 };
 
+export const duplicarPlan = async (id) => {
+  const response = await api.post(`/super-admin/planes/${id}/duplicar`);
+  return response.data;
+};
+
+export const togglePlanActivo = async (id) => {
+  const response = await api.post(`/super-admin/planes/${id}/toggle-activo`);
+  return response.data;
+};
+
 export const getSuscripciones = async (params = {}) => {
   const response = await api.get('/super-admin/suscripciones', { params });
   return response.data;
