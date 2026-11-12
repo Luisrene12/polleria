@@ -17,6 +17,8 @@ import {
   duplicarPlan,
   togglePlanActivo,
   getSuscripciones,
+  createSuscripcion,
+  cambiarPlanSuscripcion,
   renovarSuscripcion,
   getPagos,
   createPago,
@@ -118,8 +120,24 @@ export default function SuperAdminDashboard() {
 
   // Filtros
   const [filtroNegocios, setFiltroNegocios] = useState({ search: '', estado: '' });
-  const [filtroPagos, setFiltroPagos] = useState('');
+  const [filtroSuscripciones, setFiltroSuscripciones] = useState({ search: '', estado: '' });
+  const [filtroPagos, setFiltroPagos] = useState({ estado: '', search: '', metodo_pago: '', fecha_desde: '', fecha_hasta: '' });
   const [filtroTickets, setFiltroTickets] = useState('');
+
+  // Modales Suscripciones & Pagos
+  const [showModalCambiarPlan, setShowModalCambiarPlan] = useState(false);
+  const [subParaCambioPlan, setSubParaCambioPlan] = useState(null);
+  const [nuevoPlanIdParaSub, setNuevoPlanIdParaSub] = useState('');
+
+  const [formPagoManual, setFormPagoManual] = useState({
+    negocio_id: '',
+    monto: '',
+    moneda: 'BOB',
+    metodo_pago: 'qr',
+    referencia: '',
+    comprobante_url: '',
+    observaciones: '',
+  });
 
   // Cargar Dashboard principal
   const loadDashboard = async () => {
@@ -156,11 +174,17 @@ export default function SuperAdminDashboard() {
           const res = await getPlanes();
           setPlanes(res);
         } else if (activeTab === 'suscripciones') {
-          const res = await getSuscripciones();
+          const res = await getSuscripciones(filtroSuscripciones);
           setSuscripciones(res);
+          const p = await getPlanes();
+          setPlanes(p);
+          const negs = await getNegocios();
+          setNegocios(negs);
         } else if (activeTab === 'pagos') {
-          const res = await getPagos(filtroPagos ? { estado: filtroPagos } : {});
+          const res = await getPagos(filtroPagos);
           setPagos(res);
+          const negs = await getNegocios();
+          setNegocios(negs);
         } else if (activeTab === 'usuarios') {
           const res = await getUsuarios();
           setUsuarios(res);
@@ -187,7 +211,7 @@ export default function SuperAdminDashboard() {
     };
 
     fetchTabData();
-  }, [activeTab, filtroNegocios, filtroPagos, filtroTickets]);
+  }, [activeTab, filtroNegocios, filtroSuscripciones, filtroPagos, filtroTickets]);
 
   // Verificar subdominio al escribir con debounce
   useEffect(() => {
@@ -434,6 +458,70 @@ export default function SuperAdminDashboard() {
       setPlanes(updated);
     } catch (err) {
       toast.error('Error al cambiar estado del plan');
+    }
+  };
+
+  // ─── GESTIÓN DE SUSCRIPCIONES Y PAGOS ──────────────────────────────────────
+  const handleEjecutarCambioPlan = async (e) => {
+    e.preventDefault();
+    if (!subParaCambioPlan || !nuevoPlanIdParaSub) return;
+    try {
+      const res = await cambiarPlanSuscripcion(subParaCambioPlan.id, {
+        nuevo_plan_id: nuevoPlanIdParaSub,
+        motivo: 'Cambio de plan solicitado desde panel Super Admin',
+      });
+      toast.success(res.message);
+      setShowModalCambiarPlan(false);
+      const updated = await getSuscripciones(filtroSuscripciones);
+      setSuscripciones(updated);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Error al cambiar plan de suscripción');
+    }
+  };
+
+  const handleGuardarPagoManual = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await createPago(formPagoManual);
+      toast.success(res.message);
+      setShowModalPago(false);
+      setFormPagoManual({
+        negocio_id: '',
+        monto: '',
+        moneda: 'BOB',
+        metodo_pago: 'qr',
+        referencia: '',
+        comprobante_url: '',
+        observaciones: '',
+      });
+      const updated = await getPagos(filtroPagos);
+      setPagos(updated);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Error al registrar el pago');
+    }
+  };
+
+  const handleExportarPagos = async () => {
+    try {
+      toast.loading('Generando arqueo financiero CSV...', { id: 'expp' });
+      const data = await getPagos({ ...filtroPagos, export: 'true' });
+      if (!data || data.length === 0) {
+        toast.error('No hay pagos para exportar', { id: 'expp' });
+        return;
+      }
+      const headers = Object.keys(data[0]).join(',');
+      const rows = data.map(row => Object.values(row).map(val => `"${String(val ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+      const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + headers + '\n' + rows;
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', `arqueo_pagos_saas_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success('Reporte financiero descargado con éxito', { id: 'expp' });
+    } catch (err) {
+      toast.error('Error al exportar reporte de pagos', { id: 'expp' });
     }
   };
 
@@ -1350,62 +1438,147 @@ export default function SuperAdminDashboard() {
           {/* TAB 5: SUSCRIPCIONES */}
           {activeTab === 'suscripciones' && (
             <div className="space-y-6">
+              
+              {/* Barra de Filtros y Búsqueda */}
+              <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col lg:flex-row gap-4 items-center justify-between shadow-xl">
+                <div className="flex flex-1 flex-wrap gap-3 w-full">
+                  <input
+                    type="text"
+                    placeholder="Buscar restaurante por nombre, slug, email..."
+                    value={filtroSuscripciones.search || ''}
+                    onChange={(e) => setFiltroSuscripciones({ ...filtroSuscripciones, search: e.target.value })}
+                    className="flex-1 min-w-[200px] bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+                  />
+                  <select
+                    value={filtroSuscripciones.estado || ''}
+                    onChange={(e) => setFiltroSuscripciones({ ...filtroSuscripciones, estado: e.target.value })}
+                    className="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-300 focus:outline-none focus:border-orange-500 cursor-pointer"
+                  >
+                    <option value="">Todos los Estados</option>
+                    <option value="activa">Activas</option>
+                    <option value="proximas">⚠️ Próximas a vencer (≤ 5 días)</option>
+                    <option value="vencida">Vencidas</option>
+                    <option value="gracia">En Período de Gracia</option>
+                    <option value="suspendida">Suspendidas</option>
+                    <option value="cancelada">Canceladas</option>
+                  </select>
+                  <select
+                    value={filtroSuscripciones.plan_id || ''}
+                    onChange={(e) => setFiltroSuscripciones({ ...filtroSuscripciones, plan_id: e.target.value })}
+                    className="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-300 focus:outline-none focus:border-orange-500 cursor-pointer"
+                  >
+                    <option value="">Todos los Planes</option>
+                    {planes.map(p => (
+                      <option key={p.id} value={p.id}>{p.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-400">
+                    {suscripciones.length} suscripción(es) encontradas
+                  </span>
+                </div>
+              </div>
+
+              {/* Tabla de Suscripciones */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider border-b border-slate-800">
-                    <tr>
-                      <th className="py-4 px-6">Restaurante</th>
-                      <th className="py-4 px-6">Plan Contratado</th>
-                      <th className="py-4 px-6">Fecha Vencimiento</th>
-                      <th className="py-4 px-6">Estado Suscripción</th>
-                      <th className="py-4 px-6 text-right">Renovación</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800 text-slate-200">
-                    {suscripciones.map(sub => {
-                      const fin = new Date(sub.fecha_fin);
-                      const hoy = new Date();
-                      const diasRestantes = Math.ceil((fin - hoy) / (1000 * 60 * 60 * 24));
-                      return (
-                        <tr key={sub.id} className="hover:bg-slate-800/40">
-                          <td className="py-4 px-6 font-bold text-white">
-                            {sub.negocio?.nombre_comercial}
-                          </td>
-                          <td className="py-4 px-6 text-orange-400 font-bold">
-                            {sub.plan?.nombre} (Bs. {sub.plan?.precio})
-                          </td>
-                          <td className="py-4 px-6">
-                            <div>{fin.toLocaleDateString()}</div>
-                            <div className={`text-[11px] font-bold ${diasRestantes <= 5 ? 'text-red-400' : 'text-slate-400'}`}>
-                              {diasRestantes > 0 ? `${diasRestantes} días restantes` : '¡Suscripción vencida!'}
-                            </div>
-                          </td>
-                          <td className="py-4 px-6">
-                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                              sub.estado === 'activa' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
-                            }`}>
-                              {sub.estado}
-                            </span>
-                          </td>
-                          <td className="py-4 px-6 text-right space-x-2">
-                            <button
-                              onClick={() => handleRenovarSuscripcion(sub.id, sub.negocio?.nombre_comercial, 1)}
-                              className="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-bold text-xs shadow-md transition-all"
-                            >
-                              +1 Mes
-                            </button>
-                            <button
-                              onClick={() => handleRenovarSuscripcion(sub.id, sub.negocio?.nombre_comercial, 3)}
-                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg font-bold text-xs transition-all"
-                            >
-                              +3 Meses
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                      <tr>
+                        <th className="py-4 px-6">Restaurante</th>
+                        <th className="py-4 px-6">Plan Contratado</th>
+                        <th className="py-4 px-6">Vigencia (Inicio - Fin)</th>
+                        <th className="py-4 px-6">Días Restantes</th>
+                        <th className="py-4 px-6">Estado</th>
+                        <th className="py-4 px-6 text-right">Acciones de Suscripción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800 text-slate-200">
+                      {suscripciones.map(sub => {
+                        const fin = new Date(sub.fecha_fin);
+                        const inicio = new Date(sub.fecha_inicio);
+                        const dias = sub.dias_restantes ?? Math.ceil((fin - new Date()) / (1000 * 60 * 60 * 24));
+
+                        return (
+                          <tr key={sub.id} className="hover:bg-slate-800/40 transition-colors">
+                            <td className="py-4 px-6">
+                              <div className="font-black text-white text-sm">{sub.negocio?.nombre_comercial}</div>
+                              <div className="text-[11px] text-orange-400 font-mono">{sub.negocio?.slug}.polleriasaas.com</div>
+                            </td>
+                            <td className="py-4 px-6">
+                              <span className="font-bold text-white text-xs block">{sub.plan?.nombre}</span>
+                              <span className="text-emerald-400 font-bold text-[11px]">Bs. {sub.plan?.precio} / {sub.plan?.frecuencia || 'mes'}</span>
+                            </td>
+                            <td className="py-4 px-6 text-slate-300">
+                              <div>{inicio.toLocaleDateString()} al <strong>{fin.toLocaleDateString()}</strong></div>
+                              <div className="text-[10px] text-slate-500">Gracia: {sub.dias_gracia || 5} días</div>
+                            </td>
+                            <td className="py-4 px-6">
+                              {dias > 5 ? (
+                                <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                  {dias} días activos
+                                </span>
+                              ) : dias >= 0 ? (
+                                <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse">
+                                  ⚠️ {dias} días (Por vencer)
+                                </span>
+                              ) : (
+                                <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-red-500/20 text-red-400 border border-red-500/30">
+                                  ⛔ Vencida ({Math.abs(dias)}d mora)
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-4 px-6">
+                              <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${
+                                sub.estado === 'activa' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' :
+                                sub.estado === 'gracia' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' :
+                                'bg-red-500/10 text-red-400 border-red-500/30'
+                              }`}>
+                                {sub.estado}
+                              </span>
+                            </td>
+                            <td className="py-4 px-6 text-right space-x-1.5 whitespace-nowrap">
+                              <button
+                                onClick={() => handleRenovarSuscripcion(sub.id, sub.negocio?.nombre_comercial, 1)}
+                                className="px-2.5 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-bold text-xs shadow-md transition-all cursor-pointer"
+                                title="Extender suscripción 1 mes"
+                              >
+                                +1 Mes
+                              </button>
+                              <button
+                                onClick={() => handleRenovarSuscripcion(sub.id, sub.negocio?.nombre_comercial, 3)}
+                                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg font-bold text-xs transition-all cursor-pointer"
+                                title="Extender suscripción 3 meses"
+                              >
+                                +3 Meses
+                              </button>
+                              <button
+                                onClick={() => handleRenovarSuscripcion(sub.id, sub.negocio?.nombre_comercial, 12)}
+                                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 rounded-lg font-bold text-xs transition-all cursor-pointer"
+                                title="Extender suscripción 1 año"
+                              >
+                                +1 Año
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setSubParaCambioPlan(sub);
+                                  setNuevoPlanIdParaSub(sub.plan_id);
+                                  setShowModalCambiarPlan(true);
+                                }}
+                                className="px-2.5 py-1.5 bg-slate-800 hover:bg-amber-600 text-slate-300 hover:text-white rounded-lg font-bold text-xs transition-all cursor-pointer"
+                                title="Cambiar a otro plan SaaS"
+                              >
+                                🔄 Plan
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -1413,84 +1586,147 @@ export default function SuperAdminDashboard() {
           {/* TAB 6: PAGOS */}
           {activeTab === 'pagos' && (
             <div className="space-y-6">
-              <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex justify-between items-center">
-                <div className="flex gap-2">
+              
+              {/* Barra de Filtros Financieros y Acciones */}
+              <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col lg:flex-row gap-4 items-center justify-between shadow-xl">
+                <div className="flex flex-wrap gap-2 items-center w-full lg:w-auto">
                   {['', 'pendiente', 'verificado', 'rechazado'].map(st => (
                     <button
                       key={st}
-                      onClick={() => setFiltroPagos(st)}
-                      className={`px-3.5 py-1.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all ${
-                        filtroPagos === st ? 'bg-orange-500 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+                      onClick={() => setFiltroPagos({ ...filtroPagos, estado: st })}
+                      className={`px-3.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                        (filtroPagos.estado || '') === st ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30' : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-white'
                       }`}
                     >
                       {st ? st : 'Todos los Pagos'}
                     </button>
                   ))}
+                  <select
+                    value={filtroPagos.metodo_pago || ''}
+                    onChange={(e) => setFiltroPagos({ ...filtroPagos, metodo_pago: e.target.value })}
+                    className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-orange-500 cursor-pointer"
+                  >
+                    <option value="">Todos los Métodos</option>
+                    <option value="qr">Pago QR</option>
+                    <option value="transferencia">Transferencia Bancaria</option>
+                    <option value="efectivo">Efectivo</option>
+                    <option value="tarjeta">Tarjeta</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2.5 w-full lg:w-auto justify-end">
+                  <button
+                    onClick={handleExportarPagos}
+                    className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
+                    title="Exportar arqueo financiero a CSV"
+                  >
+                    <span>📥</span> Exportar CSV
+                  </button>
+                  <button
+                    onClick={() => setShowModalPago(true)}
+                    className="px-5 py-2.5 bg-gradient-to-r from-orange-500 to-amber-600 hover:brightness-110 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-lg shadow-orange-500/30 cursor-pointer"
+                  >
+                    <span>＋</span> Registrar Pago Manual
+                  </button>
                 </div>
               </div>
 
+              {/* Tabla de Pagos */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider border-b border-slate-800">
-                    <tr>
-                      <th className="py-4 px-6">Restaurante</th>
-                      <th className="py-4 px-6">Monto</th>
-                      <th className="py-4 px-6">Método & Ref</th>
-                      <th className="py-4 px-6">Fecha Pago</th>
-                      <th className="py-4 px-6">Estado</th>
-                      <th className="py-4 px-6 text-right">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800 text-slate-200">
-                    {pagos.map(p => (
-                      <tr key={p.id} className="hover:bg-slate-800/40">
-                        <td className="py-4 px-6 font-bold text-white">
-                          {p.negocio?.nombre_comercial}
-                        </td>
-                        <td className="py-4 px-6 text-sm font-black text-emerald-400">
-                          Bs. {Number(p.monto).toFixed(2)}
-                        </td>
-                        <td className="py-4 px-6">
-                          <div className="uppercase font-bold text-slate-300">{p.metodo_pago}</div>
-                          <div className="text-[11px] font-mono text-slate-500">{p.referencia || 'Sin referencia'}</div>
-                        </td>
-                        <td className="py-4 px-6 text-slate-400 font-mono">
-                          {new Date(p.fecha_pago).toLocaleDateString()}
-                        </td>
-                        <td className="py-4 px-6">
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                            p.estado === 'verificado' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
-                            p.estado === 'pendiente' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
-                            'bg-red-500/20 text-red-400 border border-red-500/30'
-                          }`}>
-                            {p.estado}
-                          </span>
-                        </td>
-                        <td className="py-4 px-6 text-right space-x-2">
-                          {p.estado === 'pendiente' && (
-                            <>
-                              <button
-                                onClick={() => handleVerificarPago(p.id, p.monto)}
-                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-xs shadow-md transition-all"
-                              >
-                                ✓ Verificar
-                              </button>
-                              <button
-                                onClick={() => handleRechazarPago(p.id)}
-                                className="px-3 py-1.5 bg-red-600/30 hover:bg-red-600 text-red-300 hover:text-white rounded-lg font-bold text-xs transition-all"
-                              >
-                                ✕ Rechazar
-                              </button>
-                            </>
-                          )}
-                          {p.estado === 'verificado' && (
-                            <span className="text-[11px] text-slate-400">Verificado por {p.verificado_por?.nombre || 'Super Admin'}</span>
-                          )}
-                        </td>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                      <tr>
+                        <th className="py-4 px-6">Restaurante</th>
+                        <th className="py-4 px-6">Monto Cobrado</th>
+                        <th className="py-4 px-6">Método & Comprobante</th>
+                        <th className="py-4 px-6">Fecha de Pago</th>
+                        <th className="py-4 px-6">Estado</th>
+                        <th className="py-4 px-6">Verificación</th>
+                        <th className="py-4 px-6 text-right">Acciones</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800 text-slate-200">
+                      {pagos.length === 0 ? (
+                        <tr><td colSpan="7" className="p-8 text-center text-slate-500">No se encontraron pagos con los filtros seleccionados</td></tr>
+                      ) : (
+                        pagos.map(p => (
+                          <tr key={p.id} className="hover:bg-slate-800/40 transition-colors">
+                            <td className="py-4 px-6 font-bold text-white">
+                              <div>{p.negocio?.nombre_comercial}</div>
+                              <div className="text-[10px] text-slate-400 font-normal">{p.suscripcion?.plan?.nombre || 'Suscripción'}</div>
+                            </td>
+                            <td className="py-4 px-6">
+                              <span className="text-sm font-black text-emerald-400">
+                                Bs. {Number(p.monto).toFixed(2)}
+                              </span>
+                              <span className="text-[10px] text-slate-500 block uppercase font-mono">{p.moneda}</span>
+                            </td>
+                            <td className="py-4 px-6">
+                              <div className="uppercase font-bold text-slate-300">{p.metodo_pago}</div>
+                              <div className="text-[11px] font-mono text-slate-400">{p.referencia || 'Sin N° Ref'}</div>
+                              {p.comprobante_url && (
+                                <a
+                                  href={p.comprobante_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-[11px] text-orange-400 hover:underline flex items-center gap-1 mt-0.5"
+                                >
+                                  📎 Ver Comprobante
+                                </a>
+                              )}
+                            </td>
+                            <td className="py-4 px-6 text-slate-300">
+                              <div>{new Date(p.fecha_pago).toLocaleDateString()}</div>
+                              <div className="text-[10px] text-slate-500">{new Date(p.fecha_pago).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                            </td>
+                            <td className="py-4 px-6">
+                              <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${
+                                p.estado === 'verificado' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' :
+                                p.estado === 'pendiente' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
+                                'bg-red-500/20 text-red-400 border-red-500/30'
+                              }`}>
+                                {p.estado}
+                              </span>
+                            </td>
+                            <td className="py-4 px-6 text-xs text-slate-400">
+                              {p.estado === 'verificado' ? (
+                                <div>
+                                  <span className="text-emerald-400 font-bold block">✓ Aprobado</span>
+                                  <span className="text-[10px] text-slate-400">Por: {p.verificado_por?.nombre || 'Super Admin'}</span>
+                                </div>
+                              ) : p.estado === 'rechazado' ? (
+                                <span className="text-red-400 font-bold">✕ Rechazado</span>
+                              ) : (
+                                <span className="text-amber-400 font-bold text-[11px]">⏳ Requiere Verificación</span>
+                              )}
+                            </td>
+                            <td className="py-4 px-6 text-right space-x-2 whitespace-nowrap">
+                              {p.estado === 'pendiente' && (
+                                <>
+                                  <button
+                                    onClick={() => handleVerificarPago(p.id, p.monto)}
+                                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-xs shadow-md transition-all cursor-pointer"
+                                    title="Confirmar recepción de fondos y activar suscripción"
+                                  >
+                                    ✓ Aprobar
+                                  </button>
+                                  <button
+                                    onClick={() => handleRechazarPago(p.id)}
+                                    className="px-3 py-1.5 bg-red-600/30 hover:bg-red-600 text-red-300 hover:text-white rounded-lg font-bold text-xs transition-all cursor-pointer"
+                                    title="Rechazar pago"
+                                  >
+                                    ✕ Rechazar
+                                  </button>
+                                </>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -2627,6 +2863,236 @@ export default function SuperAdminDashboard() {
                   className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-amber-600 hover:brightness-110 text-white rounded-xl font-black text-xs uppercase tracking-wider shadow-lg shadow-orange-500/30 cursor-pointer"
                 >
                   {editandoPlan ? 'Guardar Cambios' : 'Crear Plan'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CAMBIAR PLAN DE SUSCRIPCIÓN */}
+      {showModalCambiarPlan && subParaCambioPlan && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl animate-fade-in">
+            <div className="flex justify-between items-center pb-4 border-b border-slate-800">
+              <div>
+                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                  <span>🔄</span> Migrar / Cambiar Plan de Suscripción
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Restaurante: <span className="text-orange-400 font-bold">{subParaCambioPlan.negocio?.nombre || 'Restaurante'}</span>
+                </p>
+              </div>
+              <button
+                onClick={() => setShowModalCambiarPlan(false)}
+                className="text-slate-400 hover:text-white text-xl cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleEjecutarCambioPlan} className="space-y-4 mt-5">
+              <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800/80 text-xs space-y-1">
+                <div className="flex justify-between text-slate-400">
+                  <span>Plan Actual:</span>
+                  <span className="font-bold text-white">{subParaCambioPlan.plan?.nombre || 'Sin Plan'}</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Precio Contratado:</span>
+                  <span className="font-bold text-emerald-400">Bs. {Number(subParaCambioPlan.precio_personalizado ?? subParaCambioPlan.plan?.precio ?? 0).toFixed(2)} / {subParaCambioPlan.frecuencia || 'mensual'}</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Estado Actual:</span>
+                  <span className="font-bold uppercase text-amber-400">{subParaCambioPlan.estado}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Seleccionar Nuevo Plan Comercial *
+                </label>
+                <select
+                  value={nuevoPlanIdParaSub}
+                  onChange={(e) => setNuevoPlanIdParaSub(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                  required
+                >
+                  <option value="">-- Elige un Plan --</option>
+                  {planes.map(p => (
+                    <option key={p.id} value={p.id} disabled={p.id === subParaCambioPlan.plan_id}>
+                      {p.nombre} — Bs. {Number(p.precio).toFixed(2)}/mes (Hasta {p.limite_usuarios || '∞'} usuarios, {p.limite_sucursales || 1} sucursal) {p.id === subParaCambioPlan.plan_id ? '(ACTUAL)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Nota: Al cambiar el plan, el nuevo límite de usuarios, productos y módulos se aplicará inmediatamente sin interrumpir las operaciones del restaurante.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowModalCambiarPlan(false)}
+                  className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={!nuevoPlanIdParaSub}
+                  className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-amber-600 hover:brightness-110 disabled:opacity-50 text-white rounded-xl font-black text-xs uppercase tracking-wider shadow-lg shadow-orange-500/30 cursor-pointer"
+                >
+                  Confirmar Cambio de Plan
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: REGISTRAR PAGO MANUAL SAAS */}
+      {showModalPago && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <div className="flex justify-between items-center pb-4 border-b border-slate-800">
+              <div>
+                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                  <span>💰</span> Registrar Pago Manual SaaS
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Ingreso financiero por suscripción de restaurante
+                </p>
+              </div>
+              <button
+                onClick={() => setShowModalPago(false)}
+                className="text-slate-400 hover:text-white text-xl cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleGuardarPagoManual} className="space-y-4 mt-5">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Restaurante / Negocio *
+                </label>
+                <select
+                  value={formPagoManual.negocio_id}
+                  onChange={(e) => setFormPagoManual({ ...formPagoManual, negocio_id: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                  required
+                >
+                  <option value="">-- Selecciona el Restaurante --</option>
+                  {negocios.map(n => (
+                    <option key={n.id} value={n.id}>
+                      {n.nombre} ({n.slug || n.email || `ID #${n.id}`}) — Plan: {n.plan?.nombre || 'Sin Plan'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Monto / Importe *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="1"
+                    placeholder="Ej. 199.00"
+                    value={formPagoManual.monto}
+                    onChange={(e) => setFormPagoManual({ ...formPagoManual, monto: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Moneda
+                  </label>
+                  <select
+                    value={formPagoManual.moneda}
+                    onChange={(e) => setFormPagoManual({ ...formPagoManual, moneda: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                  >
+                    <option value="BOB">BOB (Bs. - Bolivia)</option>
+                    <option value="USD">USD ($ - Dólares)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Método de Pago *
+                  </label>
+                  <select
+                    value={formPagoManual.metodo_pago}
+                    onChange={(e) => setFormPagoManual({ ...formPagoManual, metodo_pago: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                    required
+                  >
+                    <option value="qr">Pago QR (Simple / BMSC / etc.)</option>
+                    <option value="transferencia">Transferencia Bancaria</option>
+                    <option value="efectivo">Efectivo Directo</option>
+                    <option value="tarjeta">Tarjeta Débito/Crédito</option>
+                    <option value="otro">Otro Método</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                    N° Transacción / Ref
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej. TR-998823"
+                    value={formPagoManual.referencia}
+                    onChange={(e) => setFormPagoManual({ ...formPagoManual, referencia: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  URL / Enlace del Comprobante (Voucher)
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://... o ruta del comprobante"
+                  value={formPagoManual.comprobante_url}
+                  onChange={(e) => setFormPagoManual({ ...formPagoManual, comprobante_url: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:border-orange-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Observaciones / Notas de Auditoría
+                </label>
+                <textarea
+                  rows="2"
+                  placeholder="Motivo o detalle del pago manual..."
+                  value={formPagoManual.observaciones}
+                  onChange={(e) => setFormPagoManual({ ...formPagoManual, observaciones: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-white text-sm focus:border-orange-500 focus:outline-none resize-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowModalPago(false)}
+                  className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-110 text-white rounded-xl font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/30 cursor-pointer"
+                >
+                  Guardar Pago
                 </button>
               </div>
             </form>

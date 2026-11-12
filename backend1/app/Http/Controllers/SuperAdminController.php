@@ -930,34 +930,147 @@ class SuperAdminController extends Controller
     public function getSuscripciones(Request $request)
     {
         $estado = $request->query('estado');
+        $search = $request->query('search');
+        $planId = $request->query('plan_id');
 
-        $query = Suscripcion::with(['negocio:id,nombre_comercial,slug,estado', 'plan'])
+        $query = Suscripcion::with(['negocio:id,nombre_comercial,slug,estado,email', 'plan'])
             ->orderBy('id', 'desc');
 
         if ($estado) {
-            $query->where('estado', $estado);
+            if ($estado === 'proximas') {
+                $query->whereIn('estado', ['activa', 'gracia'])
+                      ->whereBetween('fecha_fin', [now(), now()->addDays(5)]);
+            } else {
+                $query->where('estado', $estado);
+            }
         }
 
-        return response()->json($query->get());
+        if ($planId) {
+            $query->where('plan_id', $planId);
+        }
+
+        if ($search) {
+            $query->whereHas('negocio', function ($qn) use ($search) {
+                $qn->where('nombre_comercial', 'LIKE', "%{$search}%")
+                   ->orWhere('slug', 'LIKE', "%{$search}%")
+                   ->orWhere('email', 'LIKE', "%{$search}%");
+            });
+        }
+
+        $suscripciones = $query->get()->map(function ($sub) {
+            $fin = Carbon::parse($sub->fecha_fin);
+            $hoy = Carbon::now();
+            $diasRestantes = $hoy->diffInDays($fin, false);
+            
+            $sub->dias_restantes = (int)$diasRestantes;
+            $sub->es_proxima_a_vencer = ($diasRestantes >= 0 && $diasRestantes <= 5 && in_array($sub->estado, ['activa', 'gracia']));
+            return $sub;
+        });
+
+        return response()->json($suscripciones);
+    }
+
+    public function createSuscripcion(Request $request)
+    {
+        $request->validate([
+            'negocio_id'  => 'required|exists:negocios,id',
+            'plan_id'     => 'required|exists:planes,id',
+            'meses'       => 'nullable|integer|min:1',
+            'dias_gracia' => 'nullable|integer|min:0',
+        ]);
+
+        $negocioId = $request->input('negocio_id');
+        $planId = $request->input('plan_id');
+        $meses = (int) ($request->input('meses') ?? 1);
+        $diasGracia = (int) ($request->input('dias_gracia') ?? 5);
+
+        // Cancelar cualquier suscripción activa anterior del mismo negocio
+        Suscripcion::where('negocio_id', $negocioId)
+            ->whereIn('estado', ['activa', 'gracia', 'pendiente'])
+            ->update(['estado' => 'cancelada', 'fecha_cancelacion' => now()]);
+
+        $suscripcion = Suscripcion::create([
+            'negocio_id'   => $negocioId,
+            'plan_id'      => $planId,
+            'fecha_inicio' => now(),
+            'fecha_fin'    => now()->addMonths($meses),
+            'estado'       => 'activa',
+            'dias_gracia'  => $diasGracia,
+            'observaciones'=> $request->input('observaciones', 'Suscripción inicial asignada por Super Admin')
+        ]);
+
+        AuditoriaService::registrar(
+            'crear_suscripcion',
+            'suscripciones',
+            $suscripcion->id,
+            $negocioId,
+            null,
+            $suscripcion->toArray(),
+            'Nueva suscripción asignada al restaurante'
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Suscripción asignada exitosamente.',
+            'suscripcion' => $suscripcion->load('plan', 'negocio')
+        ], 201);
+    }
+
+    public function cambiarPlanSuscripcion(Request $request, $id)
+    {
+        $suscripcion = Suscripcion::with('plan', 'negocio')->findOrFail($id);
+        $request->validate([
+            'nuevo_plan_id' => 'required|exists:planes,id',
+            'motivo'        => 'nullable|string',
+        ]);
+
+        $planAnterior = $suscripcion->plan->nombre ?? 'N/A';
+        $nuevoPlan = Plan::findOrFail($request->input('nuevo_plan_id'));
+
+        $suscripcion->plan_id = $nuevoPlan->id;
+        $suscripcion->observaciones = "Cambio de plan de '{$planAnterior}' a '{$nuevoPlan->nombre}'. Motivo: " . ($request->input('motivo') ?: 'Solicitud comercial');
+        $suscripcion->save();
+
+        AuditoriaService::registrar(
+            'cambio_plan_suscripcion',
+            'suscripciones',
+            $suscripcion->id,
+            $suscripcion->negocio_id,
+            ['plan_anterior' => $planAnterior],
+            ['plan_nuevo' => $nuevoPlan->nombre],
+            $suscripcion->observaciones
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => "Plan cambiado exitosamente a '{$nuevoPlan->nombre}'.",
+            'suscripcion' => $suscripcion->load('plan', 'negocio')
+        ]);
     }
 
     public function renovarSuscripcion(Request $request, $id)
     {
         $suscripcion = Suscripcion::with('negocio', 'plan')->findOrFail($id);
         $meses = (int) $request->input('meses', 1);
+        $fechaPersonalizada = $request->input('fecha_fin');
 
         $fechaBase = Carbon::parse($suscripcion->fecha_fin);
         if ($fechaBase->isPast()) {
             $fechaBase = Carbon::now();
         }
 
-        $suscripcion->fecha_fin = $fechaBase->addMonths($meses);
+        if ($fechaPersonalizada) {
+            $suscripcion->fecha_fin = Carbon::parse($fechaPersonalizada);
+        } else {
+            $suscripcion->fecha_fin = $fechaBase->addMonths($meses);
+        }
+
         $suscripcion->estado = 'activa';
-        $suscripcion->observaciones = "Renovada por {$meses} mes(es) por el Super Administrador.";
+        $suscripcion->observaciones = "Renovada hasta " . $suscripcion->fecha_fin->format('Y-m-d') . " por Super Admin.";
         $suscripcion->save();
 
         // Reactivar negocio si estaba suspendido por falta de suscripción
-        if ($suscripcion->negocio->estado === 'suspendido') {
+        if ($suscripcion->negocio && $suscripcion->negocio->estado === 'suspendido') {
             $suscripcion->negocio->estado = 'activo';
             $suscripcion->negocio->save();
         }
@@ -969,7 +1082,7 @@ class SuperAdminController extends Controller
             $suscripcion->negocio_id,
             null,
             ['nueva_fecha_fin' => $suscripcion->fecha_fin],
-            "Renovación de suscripción por {$meses} meses"
+            "Renovación de suscripción hasta {$suscripcion->fecha_fin}"
         );
 
         return response()->json([
@@ -980,15 +1093,20 @@ class SuperAdminController extends Controller
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 5. GESTIÓN DE PAGOS Y CONTROL DE INGRESOS
+    // 5. GESTIÓN DE PAGOS Y CONTROL FINANCIERO SAAS
     // ─────────────────────────────────────────────────────────────────────────
     public function getPagos(Request $request)
     {
         $estado = $request->query('estado');
         $negocioId = $request->query('negocio_id');
+        $metodoPago = $request->query('metodo_pago');
+        $fechaDesde = $request->query('fecha_desde');
+        $fechaHasta = $request->query('fecha_hasta');
+        $search = $request->query('search');
+        $export = $request->query('export');
 
         $query = PagoSuscripcion::with([
-            'negocio:id,nombre_comercial,slug',
+            'negocio:id,nombre_comercial,slug,email',
             'suscripcion.plan',
             'verificadoPor:id,nombre,username'
         ])->orderBy('id', 'desc');
@@ -1001,28 +1119,81 @@ class SuperAdminController extends Controller
             $query->where('negocio_id', $negocioId);
         }
 
-        return response()->json($query->get());
+        if ($metodoPago) {
+            $query->where('metodo_pago', $metodoPago);
+        }
+
+        if ($fechaDesde) {
+            $query->whereDate('fecha_pago', '>=', $fechaDesde);
+        }
+
+        if ($fechaHasta) {
+            $query->whereDate('fecha_pago', '<=', $fechaHasta);
+        }
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('referencia', 'LIKE', "%{$search}%")
+                  ->orWhereHas('negocio', function ($qn) use ($search) {
+                      $qn->where('nombre_comercial', 'LIKE', "%{$search}%");
+                  });
+            });
+        }
+
+        $pagos = $query->get();
+
+        if ($export === 'true') {
+            $exportData = $pagos->map(function ($p) {
+                return [
+                    'ID Pago' => $p->id,
+                    'Restaurante' => $p->negocio?->nombre_comercial ?? 'N/A',
+                    'Plan' => $p->suscripcion?->plan?->nombre ?? 'N/A',
+                    'Monto (Bs.)' => number_format((float)$p->monto, 2),
+                    'Moneda' => $p->moneda,
+                    'Método de Pago' => strtoupper($p->metodo_pago),
+                    'N° Referencia' => $p->referencia ?? 'S/R',
+                    'Estado' => ucfirst($p->estado),
+                    'Fecha de Pago' => Carbon::parse($p->fecha_pago)->format('Y-m-d H:i'),
+                    'Verificado Por' => $p->verificadoPor?->nombre ?? 'Pendiente',
+                    'Fecha Verificación' => $p->fecha_verificacion ? Carbon::parse($p->fecha_verificacion)->format('Y-m-d H:i') : 'N/A',
+                ];
+            });
+            return response()->json($exportData);
+        }
+
+        return response()->json($pagos);
     }
 
     public function createPago(Request $request)
     {
         $request->validate([
-            'negocio_id'     => 'required|exists:negocios,id',
-            'suscripcion_id' => 'required|exists:suscripciones,id',
-            'monto'          => 'required|numeric|min:1',
-            'moneda'         => 'required|string|max:10',
-            'metodo_pago'    => 'required|string|max:50',
-            'referencia'     => 'nullable|string|max:100',
-            'observaciones'  => 'nullable|string',
+            'negocio_id'      => 'required|exists:negocios,id',
+            'suscripcion_id'  => 'nullable|exists:suscripciones,id',
+            'monto'           => 'required|numeric|min:1',
+            'moneda'          => 'required|string|max:10',
+            'metodo_pago'     => 'required|string|max:50',
+            'referencia'      => 'nullable|string|max:100',
+            'comprobante_url' => 'nullable|string|max:2048',
+            'observaciones'   => 'nullable|string',
         ]);
 
+        $negocioId = $request->input('negocio_id');
+        $suscripcionId = $request->input('suscripcion_id');
+
+        // Si no se envió suscripcion_id, asociar con la suscripción activa del negocio
+        if (!$suscripcionId) {
+            $subActiva = Suscripcion::where('negocio_id', $negocioId)->latest('id')->first();
+            $suscripcionId = $subActiva?->id;
+        }
+
         $pago = PagoSuscripcion::create([
-            'negocio_id'         => $request->input('negocio_id'),
-            'suscripcion_id'     => $request->input('suscripcion_id'),
-            'monto'              => $request->input('monto'),
+            'negocio_id'         => $negocioId,
+            'suscripcion_id'     => $suscripcionId,
+            'monto'              => (float) $request->input('monto'),
             'moneda'             => $request->input('moneda', 'BOB'),
-            'metodo_pago'        => $request->input('metodo_pago'),
+            'metodo_pago'        => strtolower($request->input('metodo_pago')),
             'referencia'         => $request->input('referencia'),
+            'comprobante_url'    => $request->input('comprobante_url'),
             'estado'             => 'pendiente',
             'fecha_pago'         => now(),
             'observaciones'      => $request->input('observaciones'),
@@ -1036,13 +1207,13 @@ class SuperAdminController extends Controller
             $pago->negocio_id,
             null,
             $pago->toArray(),
-            'Registro de pago de suscripción'
+            "Registro de pago manual por Bs. {$pago->monto} ({$pago->metodo_pago})"
         );
 
         return response()->json([
             'success' => true,
-            'message' => 'Pago registrado como pendiente.',
-            'pago' => $pago
+            'message' => 'Pago registrado como pendiente de verificación.',
+            'pago'    => $pago->load('negocio', 'suscripcion.plan')
         ], 201);
     }
 

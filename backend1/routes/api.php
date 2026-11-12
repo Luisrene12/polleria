@@ -73,7 +73,9 @@ Route::prefix('super-admin')->middleware(['auth:sanctum', 'super_admin'])->group
     Route::post('/planes/{id}/duplicar', [SuperAdminController::class, 'duplicarPlan']);
     Route::post('/planes/{id}/toggle-activo', [SuperAdminController::class, 'togglePlanActivo']);
     Route::get('/suscripciones', [SuperAdminController::class, 'getSuscripciones']);
+    Route::post('/suscripciones', [SuperAdminController::class, 'createSuscripcion']);
     Route::post('/suscripciones/{id}/renovar', [SuperAdminController::class, 'renovarSuscripcion']);
+    Route::post('/suscripciones/{id}/cambiar-plan', [SuperAdminController::class, 'cambiarPlanSuscripcion']);
 
     // 5. Pagos y Control Financiero
     Route::get('/pagos', [SuperAdminController::class, 'getPagos']);

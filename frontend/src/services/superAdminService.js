@@ -94,8 +94,18 @@ export const getSuscripciones = async (params = {}) => {
   return response.data;
 };
 
-export const renovarSuscripcion = async (id, meses = 1) => {
-  const response = await api.post(`/super-admin/suscripciones/${id}/renovar`, { meses });
+export const createSuscripcion = async (payload) => {
+  const response = await api.post('/super-admin/suscripciones', payload);
+  return response.data;
+};
+
+export const cambiarPlanSuscripcion = async (id, payload) => {
+  const response = await api.post(`/super-admin/suscripciones/${id}/cambiar-plan`, payload);
+  return response.data;
+};
+
+export const renovarSuscripcion = async (id, meses = 1, fecha_fin = null) => {
+  const response = await api.post(`/super-admin/suscripciones/${id}/renovar`, { meses, fecha_fin });
   return response.data;
 };
 
