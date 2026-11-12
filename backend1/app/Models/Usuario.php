@@ -23,6 +23,8 @@ class Usuario extends Authenticatable
         'pin_hash',
         'rol',
         'activo',
+        'ultimo_login',
+        'ip_ultimo_login',
         'creado_en',
     ];
 

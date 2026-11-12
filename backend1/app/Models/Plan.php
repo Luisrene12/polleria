@@ -15,18 +15,26 @@ class Plan extends Model
         'nombre',
         'descripcion',
         'precio',
+        'precio_anual',
         'moneda',
         'frecuencia',
+        'dias_prueba',
         'limite_usuarios',
+        'limite_productos',
         'limite_sucursales',
+        'limite_almacenamiento_mb',
         'activo',
         'orden',
     ];
 
     protected $casts = [
         'precio' => 'float',
+        'precio_anual' => 'float',
+        'dias_prueba' => 'integer',
         'limite_usuarios' => 'integer',
+        'limite_productos' => 'integer',
         'limite_sucursales' => 'integer',
+        'limite_almacenamiento_mb' => 'integer',
         'activo' => 'boolean',
         'orden' => 'integer',
     ];

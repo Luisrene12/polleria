@@ -20,6 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'security' => \App\Http\Middleware\SecurityMiddleware::class,
             'super_admin' => \App\Http\Middleware\SuperAdminMiddleware::class,
             'negocio_activo' => \App\Http\Middleware\CheckNegocioActivo::class,
+            'modulo' => \App\Http\Middleware\CheckModuloAcceso::class,
         ]);
 
         // Apply security middleware globally to API
