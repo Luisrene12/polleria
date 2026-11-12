@@ -14,6 +14,8 @@ use App\Models\Auditoria;
 use App\Models\Notificacion;
 use App\Models\SoporteTicket;
 use App\Models\SoporteMensaje;
+use App\Models\SaasBackup;
+use App\Models\SaasConfiguracion;
 use App\Services\AuditoriaService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -1975,15 +1977,23 @@ class SuperAdminController extends Controller
         ]);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 10. BITÁCORA DE AUDITORÍA AVANZADA & EXPORTACIÓN (FASE 9)
+    // ─────────────────────────────────────────────────────────────────────────
     public function getAuditoria(Request $request)
     {
         $accion = $request->query('accion');
         $negocioId = $request->query('negocio_id');
+        $usuarioId = $request->query('usuario_id');
+        $fechaDesde = $request->query('fecha_desde');
+        $fechaHasta = $request->query('fecha_hasta');
+        $search = $request->query('search');
+        $export = $request->query('export');
 
         $query = Auditoria::with(['usuario:id,nombre,username', 'negocio:id,nombre_comercial'])
             ->orderBy('id', 'desc');
 
-        if ($accion) {
+        if ($accion && $accion !== 'todos') {
             $query->where('accion', $accion);
         }
 
@@ -1991,6 +2001,228 @@ class SuperAdminController extends Controller
             $query->where('negocio_id', $negocioId);
         }
 
-        return response()->json($query->paginate(25));
+        if ($usuarioId) {
+            $query->where('usuario_id', $usuarioId);
+        }
+
+        if ($fechaDesde) {
+            $query->whereDate('creado_en', '>=', $fechaDesde);
+        }
+
+        if ($fechaHasta) {
+            $query->whereDate('creado_en', '<=', $fechaHasta);
+        }
+
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('recurso', 'like', "%{$search}%")
+                  ->orWhere('ip', 'like', "%{$search}%")
+                  ->orWhere('motivo', 'like', "%{$search}%")
+                  ->orWhereHas('usuario', function($qu) use ($search) {
+                      $qu->where('nombre', 'like', "%{$search}%")->orWhere('username', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('negocio', function($qn) use ($search) {
+                      $qn->where('nombre_comercial', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        if ($export === 'true' || $export === '1') {
+            $items = $query->take(500)->get();
+            $exportData = $items->map(function ($a) {
+                return [
+                    'ID' => $a->id,
+                    'Fecha y Hora' => $a->creado_en ? Carbon::parse($a->creado_en)->format('Y-m-d H:i:s') : '',
+                    'Accion' => $a->accion,
+                    'Recurso' => $a->recurso . ' #' . ($a->recurso_id ?? ''),
+                    'Usuario' => $a->usuario ? "{$a->usuario->nombre} (@{$a->usuario->username})" : 'Sistema',
+                    'Restaurante' => $a->negocio ? $a->negocio->nombre_comercial : 'SaaS Global',
+                    'IP' => $a->ip ?? 'N/A',
+                    'Motivo' => $a->motivo ?? '',
+                ];
+            });
+            return response()->json($exportData);
+        }
+
+        return response()->json($query->paginate(30));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 11. MONITOREO & SALUD DEL SISTEMA SAAS (FASE 9)
+    // ─────────────────────────────────────────────────────────────────────────
+    public function getSystemHealth()
+    {
+        $startDb = microtime(true);
+        $dbStatus = 'online';
+        $dbLatency = 0;
+        $totalTables = 0;
+        try {
+            $tables = DB::select('SHOW TABLES');
+            $dbLatency = round((microtime(true) - $startDb) * 1000, 2);
+            $totalTables = count($tables);
+        } catch (\Throwable $e) {
+            $dbStatus = 'error: ' . $e->getMessage();
+        }
+
+        // WhatsApp Service check
+        $waStatus = 'desconectado';
+        try {
+            $respWa = \Illuminate\Support\Facades\Http::timeout(2)->get('http://polleria_whatsapp:3002/status');
+            if ($respWa->successful()) {
+                $waStatus = $respWa->json('connected') ? 'conectado' : 'esperando_qr';
+            }
+        } catch (\Throwable $e) {
+            $waStatus = 'offline';
+        }
+
+        // Almacenamiento
+        $storagePath = storage_path('app');
+        $freeSpace = @disk_free_space($storagePath) ?: 0;
+        $totalSpace = @disk_total_space($storagePath) ?: 0;
+        $freeSpaceMb = round($freeSpace / (1024 * 1024), 2);
+        $totalSpaceMb = round($totalSpace / (1024 * 1024), 2);
+
+        // Modo Mantenimiento
+        $modoMantenimiento = SaasConfiguracion::where('clave', 'modo_mantenimiento')->value('valor') === 'true';
+
+        return response()->json([
+            'backend' => [
+                'status'         => 'online',
+                'php_version'    => PHP_VERSION,
+                'laravel_version'=> app()->version(),
+                'memory_usage'   => round(memory_get_usage(true) / (1024 * 1024), 2) . ' MB',
+                'server_time'    => Carbon::now()->toDateTimeString(),
+                'timezone'       => config('app.timezone'),
+            ],
+            'database' => [
+                'status'       => $dbStatus,
+                'latency_ms'   => $dbLatency,
+                'total_tables' => $totalTables,
+                'database'     => config('database.connections.mysql.database'),
+            ],
+            'whatsapp' => [
+                'service' => 'polleria_whatsapp:3002',
+                'status'  => $waStatus,
+            ],
+            'storage' => [
+                'free_space_mb'  => $freeSpaceMb,
+                'total_space_mb' => $totalSpaceMb,
+                'used_percent'   => $totalSpaceMb > 0 ? round((($totalSpaceMb - $freeSpaceMb) / $totalSpaceMb) * 100, 1) : 0,
+            ],
+            'saas_config' => [
+                'modo_mantenimiento' => $modoMantenimiento,
+                'app_env'            => config('app.env'),
+            ]
+        ]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 12. GESTIÓN DE RESPALDOS SAAS (BACKUPS - FASE 9)
+    // ─────────────────────────────────────────────────────────────────────────
+    public function getBackups()
+    {
+        $backups = SaasBackup::with('usuario:id,nombre,username')
+            ->orderBy('id', 'desc')
+            ->get();
+
+        return response()->json($backups);
+    }
+
+    public function generarBackup(Request $request)
+    {
+        $tipo = $request->input('tipo', 'database');
+        $notas = $request->input('notas', 'Respaldo manual generado desde panel Super Admin');
+
+        $backupDir = storage_path('app/backups');
+        if (!file_exists($backupDir)) {
+            mkdir($backupDir, 0755, true);
+        }
+
+        $filename = 'polleria_saas_' . date('Y_m_d_His') . '.sql';
+        $fullPath = $backupDir . '/' . $filename;
+
+        // Exportar estructura y datos de tablas MySQL
+        $dbHost = config('database.connections.mysql.host');
+        $dbPort = config('database.connections.mysql.port', '3306');
+        $dbName = config('database.connections.mysql.database');
+        $dbUser = config('database.connections.mysql.username');
+        $dbPass = config('database.connections.mysql.password');
+
+        $cmd = sprintf(
+            'mysqldump --host=%s --port=%s --user=%s --password=%s %s > %s 2>&1',
+            escapeshellarg($dbHost),
+            escapeshellarg($dbPort),
+            escapeshellarg($dbUser),
+            escapeshellarg($dbPass),
+            escapeshellarg($dbName),
+            escapeshellarg($fullPath)
+        );
+
+        exec($cmd, $output, $returnCode);
+
+        // Si mysqldump no estaba instalado en el contenedor, generar dump SQL vía PHP PDO
+        if ($returnCode !== 0 || !file_exists($fullPath) || filesize($fullPath) === 0) {
+            $handle = fopen($fullPath, 'w');
+            fwrite($handle, "-- SAAS BACKUP GENERATED VIA PHP PDO\n-- Fecha: " . date('Y-m-d H:i:s') . "\n\n");
+            $tables = DB::select('SHOW TABLES');
+            $dbKey = 'Tables_in_' . $dbName;
+            foreach ($tables as $t) {
+                $tableName = $t->$dbKey ?? reset($t);
+                $createTable = DB::select("SHOW CREATE TABLE `{$tableName}`");
+                $createSql = $createTable[0]->{'Create Table'} ?? '';
+                fwrite($handle, "DROP TABLE IF EXISTS `{$tableName}`;\n" . $createSql . ";\n\n");
+                $rows = DB::table($tableName)->get();
+                foreach ($rows as $r) {
+                    $values = array_map(function($v) {
+                        return is_null($v) ? 'NULL' : DB::getPdo()->quote($v);
+                    }, (array)$r);
+                    if (!empty($values)) {
+                        fwrite($handle, "INSERT INTO `{$tableName}` VALUES (" . implode(',', $values) . ");\n");
+                    }
+                }
+                fwrite($handle, "\n");
+            }
+            fclose($handle);
+        }
+
+        $fileSize = file_exists($fullPath) ? filesize($fullPath) : 0;
+
+        $backup = SaasBackup::create([
+            'archivo'    => $filename,
+            'peso_bytes' => $fileSize,
+            'tipo'       => $tipo,
+            'estado'     => 'exitoso',
+            'usuario_id' => $request->user()?->id,
+            'notas'      => $notas,
+        ]);
+
+        AuditoriaService::registrar(
+            'generar_backup',
+            'saas_backups',
+            $backup->id,
+            null,
+            null,
+            ['archivo' => $filename, 'tamano_bytes' => $fileSize]
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Respaldo de base de datos generado exitosamente (' . round($fileSize / 1024, 2) . ' KB).',
+            'backup'  => $backup
+        ], 201);
+    }
+
+    public function descargarBackup($id)
+    {
+        $backup = SaasBackup::findOrFail($id);
+        $fullPath = storage_path('app/backups/' . $backup->archivo);
+
+        if (!file_exists($fullPath)) {
+            return response()->json(['message' => 'El archivo físico de respaldo no fue encontrado en el servidor.'], 404);
+        }
+
+        return response()->download($fullPath, $backup->archivo, [
+            'Content-Type' => 'application/sql'
+        ]);
     }
 }

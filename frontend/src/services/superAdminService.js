@@ -220,3 +220,19 @@ export const deleteNotificacion = async (id) => {
   const response = await api.delete(`/super-admin/notificaciones/${id}`);
   return response.data;
 };
+
+// ─── 10. MONITOREO Y RESPALDOS (FASE 9) ──────────────────────────────────────
+export const getSystemHealth = async () => {
+  const response = await api.get('/super-admin/sistema/health');
+  return response.data;
+};
+
+export const getBackups = async () => {
+  const response = await api.get('/super-admin/sistema/backups');
+  return response.data;
+};
+
+export const generarBackup = async (payload = {}) => {
+  const response = await api.post('/super-admin/sistema/backups', payload);
+  return response.data;
+};

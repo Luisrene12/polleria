@@ -501,7 +501,7 @@ export default function VentasGenerales() {
                     <button
                         onClick={handleWhatsAppPDF}
                         className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs flex items-center gap-2 transition-all cursor-pointer shadow-lg shadow-emerald-950/40 border border-emerald-400/30 active:scale-95"
-                        title="Genera el PDF del reporte, lo descarga y abre WhatsApp para enviarlo directamente"
+                        title="Envía el reporte oficial en PDF directamente al WhatsApp configurado sin descargarlo en la computadora"
                     >
                         <span className="text-base">📱</span>
                         <span>Enviar a WhatsApp (PDF)</span>

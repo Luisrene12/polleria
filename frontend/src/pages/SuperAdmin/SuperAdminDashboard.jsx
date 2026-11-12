@@ -41,6 +41,9 @@ import {
   getNotificaciones,
   enviarNotificacionBroadcast,
   deleteNotificacion,
+  getSystemHealth,
+  getBackups,
+  generarBackup,
 } from '../../services/superAdminService';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -157,6 +160,14 @@ export default function SuperAdminDashboard() {
     mensaje: '',
   });
 
+  // Auditoría, Monitoreo & Respaldos (FASE 9)
+  const [subTabAuditoria, setSubTabAuditoria] = useState('bitacora'); // 'bitacora' | 'monitoreo' | 'backups'
+  const [filtroAuditoria, setFiltroAuditoria] = useState({ accion: 'todos', negocio_id: '', usuario_id: '', fecha_desde: '', fecha_hasta: '', search: '' });
+  const [systemHealth, setSystemHealth] = useState(null);
+  const [backupsList, setBackupsList] = useState([]);
+  const [loadingBackup, setLoadingBackup] = useState(false);
+  const [modalDiffAuditoria, setModalDiffAuditoria] = useState(null);
+
   // Modales & Formularios Usuarios
   const [showModalUsuario, setShowModalUsuario] = useState(false);
   const [editandoUsuario, setEditandoUsuario] = useState(null);
@@ -264,8 +275,18 @@ export default function SuperAdminDashboard() {
           const res = await getBillingConfigAll();
           setBillingList(Array.isArray(res) ? res : []);
         } else if (activeTab === 'auditoria') {
-          const res = await getAuditoria();
+          const res = await getAuditoria(filtroAuditoria);
           setAuditoria(res.data || res);
+          try {
+            const health = await getSystemHealth();
+            setSystemHealth(health);
+            const bks = await getBackups();
+            setBackupsList(bks);
+            const negs = await getNegocios();
+            setNegocios(negs);
+          } catch (e) {
+            console.warn('Error cargando diagnósticos:', e);
+          }
         } else if (activeTab === 'dashboard') {
           loadDashboard();
         }
@@ -275,7 +296,7 @@ export default function SuperAdminDashboard() {
     };
 
     fetchTabData();
-  }, [activeTab, filtroNegocios, filtroSuscripciones, filtroPagos, filtroTickets, filtroUsuarios, filtroTicketsObj, filtroNotifTipo]);
+  }, [activeTab, filtroNegocios, filtroSuscripciones, filtroPagos, filtroTickets, filtroUsuarios, filtroTicketsObj, filtroNotifTipo, filtroAuditoria]);
 
   // Verificar subdominio al escribir con debounce
   useEffect(() => {
@@ -811,6 +832,57 @@ export default function SuperAdminDashboard() {
       setNotificacionesList(notifs);
     } catch (err) {
       toast.error('Error al eliminar notificación');
+    }
+  };
+
+  // ─── AUDITORÍA, MONITOREO & RESPALDOS (FASE 9) ──────────────────────────
+  const handleExportarAuditoria = async () => {
+    try {
+      toast.loading('Generando bitácora de auditoría CSV...', { id: 'expaud' });
+      const data = await getAuditoria({ ...filtroAuditoria, export: 'true' });
+      if (!data || data.length === 0) {
+        toast.error('No hay registros de auditoría para exportar', { id: 'expaud' });
+        return;
+      }
+      const headers = Object.keys(data[0]).join(',');
+      const rows = data.map(row => Object.values(row).map(val => `"${String(val ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+      const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + headers + '\n' + rows;
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', `bitacora_auditoria_saas_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success('Bitácora oficial descargada con éxito', { id: 'expaud' });
+    } catch (err) {
+      toast.error('Error al exportar bitácora de auditoría', { id: 'expaud' });
+    }
+  };
+
+  const handleGenerarBackupManual = async () => {
+    try {
+      setLoadingBackup(true);
+      toast.loading('Generando dump SQL de la base de datos...', { id: 'bkp' });
+      const res = await generarBackup({ notas: 'Respaldo manual solicitado desde el panel Super Admin' });
+      toast.success(res.message, { id: 'bkp' });
+      const bks = await getBackups();
+      setBackupsList(bks);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Error al generar respaldo', { id: 'bkp' });
+    } finally {
+      setLoadingBackup(false);
+    }
+  };
+
+  const handleRefrescarHealth = async () => {
+    try {
+      toast.loading('Comprobando conectividad y métricas del servidor...', { id: 'hlth' });
+      const res = await getSystemHealth();
+      setSystemHealth(res);
+      toast.success('Diagnóstico actualizado', { id: 'hlth' });
+    } catch (err) {
+      toast.error('Error al consultar salud del sistema', { id: 'hlth' });
     }
   };
 
@@ -2986,47 +3058,461 @@ export default function SuperAdminDashboard() {
             </div>
           )}
 
-          {/* TAB 10: AUDITORÍA */}
+          {/* TAB 10: AUDITORÍA, MONITOREO & RESPALDOS (FASE 9) */}
           {activeTab === 'auditoria' && (
             <div className="space-y-6">
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider border-b border-slate-800">
-                    <tr>
-                      <th className="py-4 px-6">Fecha & Hora</th>
-                      <th className="py-4 px-6">Usuario Responsable</th>
-                      <th className="py-4 px-6">Acción</th>
-                      <th className="py-4 px-6">Recurso</th>
-                      <th className="py-4 px-6">Restaurante</th>
-                      <th className="py-4 px-6">IP</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800 text-slate-200">
-                    {auditoria.map(a => (
-                      <tr key={a.id} className="hover:bg-slate-800/40">
-                        <td className="py-4 px-6 font-mono text-slate-400">
-                          {new Date(a.creado_en).toLocaleString()}
-                        </td>
-                        <td className="py-4 px-6 font-bold text-white">
-                          {a.usuario?.nombre || a.usuario?.username || 'Sistema'}
-                        </td>
-                        <td className="py-4 px-6">
-                          <span className="px-2 py-1 rounded bg-slate-800 text-orange-400 font-bold font-mono">
-                            {a.accion}
-                          </span>
-                        </td>
-                        <td className="py-4 px-6 text-slate-300 font-mono">
-                          {a.recurso} #{a.recurso_id || '-'}
-                        </td>
-                        <td className="py-4 px-6 text-slate-400">
-                          {a.negocio?.nombre_comercial || 'Global SaaS'}
-                        </td>
-                        <td className="py-4 px-6 font-mono text-slate-500">{a.ip || '127.0.0.1'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              {/* Header & Subtab Switcher */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  <h2 className="text-xl font-black text-white flex items-center gap-2">
+                    <span>📜</span> Auditoría, Diagnóstico & Respaldos SaaS
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Trazabilidad de operaciones, estado del servidor y gestión de copias de seguridad
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="bg-slate-900 border border-slate-800 p-1 rounded-xl flex items-center gap-1 shadow-inner">
+                    <button
+                      onClick={() => setSubTabAuditoria('bitacora')}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        subTabAuditoria === 'bitacora'
+                          ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-md shadow-orange-500/20'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span>📜 Bitácora</span>
+                    </button>
+                    <button
+                      onClick={() => setSubTabAuditoria('monitoreo')}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        subTabAuditoria === 'monitoreo'
+                          ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-md shadow-orange-500/20'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span>⚡ Monitoreo</span>
+                    </button>
+                    <button
+                      onClick={() => setSubTabAuditoria('backups')}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        subTabAuditoria === 'backups'
+                          ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-md shadow-orange-500/20'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span>💾 Respaldos</span>
+                      <span className="px-1.5 py-0.2 bg-black/30 rounded-full text-[10px]">
+                        {backupsList.length}
+                      </span>
+                    </button>
+                  </div>
+                </div>
               </div>
+
+              {/* ──────────────────────────────────────────────────────────
+                  SUB-TAB 1: BITÁCORA FORENSE DE AUDITORÍA
+              ────────────────────────────────────────────────────────── */}
+              {subTabAuditoria === 'bitacora' && (
+                <div className="space-y-6">
+                  {/* Toolbar & Filters */}
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                    <div className="flex-1 flex flex-col sm:flex-row items-center gap-3">
+                      <div className="relative w-full sm:w-64">
+                        <span className="absolute left-3.5 top-2.5 text-slate-500 text-sm">🔍</span>
+                        <input
+                          type="text"
+                          placeholder="Buscar por usuario, IP, motivo..."
+                          value={filtroAuditoria.search}
+                          onChange={(e) => setFiltroAuditoria({ ...filtroAuditoria, search: e.target.value })}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-orange-500 transition-colors"
+                        />
+                      </div>
+
+                      <select
+                        value={filtroAuditoria.accion}
+                        onChange={(e) => setFiltroAuditoria({ ...filtroAuditoria, accion: e.target.value })}
+                        className="w-full sm:w-auto bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-orange-500"
+                      >
+                        <option value="todos">Todas las Acciones</option>
+                        <option value="crear_negocio">🏢 Alta de Restaurante</option>
+                        <option value="suspender_negocio">⛔ Suspensión</option>
+                        <option value="activar_negocio">✅ Reactivación</option>
+                        <option value="archivar_negocio">🗄️ Archivo de Restaurante</option>
+                        <option value="cambiar_plan">💎 Modificación de Plan</option>
+                        <option value="registrar_pago">💵 Pago Registrado</option>
+                        <option value="verificar_pago">✓ Pago Verificado</option>
+                        <option value="rechazar_pago">✕ Pago Rechazado</option>
+                        <option value="crear_usuario">👤 Creación de Usuario</option>
+                        <option value="reset_password_usuario">🔑 Restablecimiento de Clave</option>
+                        <option value="broadcast_notificacion">📢 Notificación Emitida</option>
+                        <option value="generar_backup">💾 Respaldo Generado</option>
+                      </select>
+
+                      <select
+                        value={filtroAuditoria.negocio_id}
+                        onChange={(e) => setFiltroAuditoria({ ...filtroAuditoria, negocio_id: e.target.value })}
+                        className="w-full sm:w-auto bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-orange-500"
+                      >
+                        <option value="">Todos los Restaurantes</option>
+                        {negocios.map(n => (
+                          <option key={n.id} value={n.id}>{n.nombre}</option>
+                        ))}
+                      </select>
+
+                      <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 px-2 py-1.5 rounded-xl text-xs text-slate-400">
+                        <span>Desde:</span>
+                        <input
+                          type="date"
+                          value={filtroAuditoria.fecha_desde}
+                          onChange={(e) => setFiltroAuditoria({ ...filtroAuditoria, fecha_desde: e.target.value })}
+                          className="bg-transparent text-white focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleExportarAuditoria}
+                      className="px-4 py-2 bg-slate-950 border border-slate-700 hover:border-emerald-500/60 text-slate-300 hover:text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                    >
+                      <span>📥</span>
+                      <span>Exportar CSV</span>
+                    </button>
+                  </div>
+
+                  {/* Tabla de Auditoría */}
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                          <tr>
+                            <th className="py-4 px-6">Fecha & Hora</th>
+                            <th className="py-4 px-6">Acción</th>
+                            <th className="py-4 px-6">Usuario Responsable</th>
+                            <th className="py-4 px-6">Recurso Afectado</th>
+                            <th className="py-4 px-6">Restaurante</th>
+                            <th className="py-4 px-6">IP Origen</th>
+                            <th className="py-4 px-6 text-right">Detalle</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800 text-slate-200">
+                          {auditoria.length === 0 ? (
+                            <tr>
+                              <td colSpan="7" className="py-12 text-center text-slate-500">
+                                No se encontraron registros de auditoría coincidentes.
+                              </td>
+                            </tr>
+                          ) : (
+                            auditoria.map(a => {
+                              const badgeAction = {
+                                crear_negocio:         { icon: '🏢', label: 'Alta Restaurante', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
+                                suspender_negocio:     { icon: '⛔', label: 'Suspensión',       color: 'bg-red-500/20 text-red-400 border-red-500/30' },
+                                activar_negocio:       { icon: '✅', label: 'Reactivación',     color: 'bg-teal-500/20 text-teal-400 border-teal-500/30' },
+                                archivar_negocio:      { icon: '🗄️', label: 'Archivo Seguro',  color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
+                                cambiar_plan:          { icon: '💎', label: 'Modif. Plan',      color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
+                                registrar_pago:        { icon: '💵', label: 'Pago Registrado',  color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
+                                verificar_pago:        { icon: '✓',  label: 'Pago Verificado',  color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
+                                rechazar_pago:         { icon: '✕',  label: 'Pago Rechazado',   color: 'bg-red-500/20 text-red-400 border-red-500/30' },
+                                crear_usuario:         { icon: '👤', label: 'Nuevo Usuario',    color: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' },
+                                reset_password_usuario:{ icon: '🔑', label: 'Reset Clave',      color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
+                                broadcast_notificacion:{ icon: '📢', label: 'Broadcast',        color: 'bg-orange-500/20 text-orange-400 border-orange-500/30' },
+                                generar_backup:        { icon: '💾', label: 'Respaldo DB',      color: 'bg-teal-500/20 text-teal-400 border-teal-500/30' },
+                              }[a.accion] || { icon: '📌', label: a.accion, color: 'bg-slate-800 text-slate-300 border-slate-700' };
+
+                              return (
+                                <tr key={a.id} className="hover:bg-slate-800/40 transition-colors">
+                                  <td className="py-4 px-6 font-mono text-slate-400">
+                                    {new Date(a.creado_en).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}
+                                  </td>
+
+                                  <td className="py-4 px-6">
+                                    <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider border inline-flex items-center gap-1.5 ${badgeAction.color}`}>
+                                      <span>{badgeAction.icon}</span>
+                                      <span>{badgeAction.label}</span>
+                                    </span>
+                                  </td>
+
+                                  <td className="py-4 px-6">
+                                    <div className="font-bold text-white">{a.usuario?.nombre || 'Sistema Automatizado'}</div>
+                                    <div className="text-[11px] text-slate-400 font-mono">@{a.usuario?.username || 'system'}</div>
+                                  </td>
+
+                                  <td className="py-4 px-6 font-mono text-slate-300">
+                                    <span className="text-orange-400">{a.recurso}</span> #{a.recurso_id || '-'}
+                                  </td>
+
+                                  <td className="py-4 px-6 text-slate-300">
+                                    {a.negocio ? (
+                                      <span className="font-semibold text-white">{a.negocio.nombre_comercial}</span>
+                                    ) : (
+                                      <span className="text-slate-500 font-bold">🌐 Plataforma SaaS Central</span>
+                                    )}
+                                  </td>
+
+                                  <td className="py-4 px-6 font-mono text-slate-400 text-[11px]">
+                                    {a.ip || '127.0.0.1'}
+                                  </td>
+
+                                  <td className="py-4 px-6 text-right">
+                                    {(a.datos_anteriores || a.datos_nuevos) ? (
+                                      <button
+                                        onClick={() => setModalDiffAuditoria(a)}
+                                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-orange-400 rounded-lg font-bold text-[11px] transition-all cursor-pointer"
+                                      >
+                                        👁️ Diff
+                                      </button>
+                                    ) : (
+                                      <span className="text-slate-600 text-[11px]">-</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ──────────────────────────────────────────────────────────
+                  SUB-TAB 2: SALUD & MONITOREO DEL SISTEMA
+              ────────────────────────────────────────────────────────── */}
+              {subTabAuditoria === 'monitoreo' && (
+                <div className="space-y-6">
+                  <div className="flex justify-between items-center bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+                    <div>
+                      <h3 className="text-base font-black text-white flex items-center gap-2">
+                        <span>⚡</span> Estado de Salud del Clúster SaaS
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Supervisión de latencia, memoria de ejecución, base de datos y microservicios
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleRefrescarHealth}
+                      className="px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-600 hover:brightness-110 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-md shadow-orange-500/20 cursor-pointer"
+                    >
+                      <span>🔄</span>
+                      <span>Refrescar Diagnóstico</span>
+                    </button>
+                  </div>
+
+                  {systemHealth ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {/* Backend PHP/Laravel */}
+                      <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-black text-white flex items-center gap-2">
+                            <span>🚀</span> Backend & Framework
+                          </span>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                            {systemHealth.backend.status}
+                          </span>
+                        </div>
+                        <div className="space-y-1.5 text-xs">
+                          <div className="flex justify-between text-slate-400">
+                            <span>Versión PHP:</span>
+                            <span className="font-mono font-bold text-white">{systemHealth.backend.php_version}</span>
+                          </div>
+                          <div className="flex justify-between text-slate-400">
+                            <span>Laravel Core:</span>
+                            <span className="font-mono font-bold text-white">v{systemHealth.backend.laravel_version}</span>
+                          </div>
+                          <div className="flex justify-between text-slate-400">
+                            <span>Consumo de Memoria:</span>
+                            <span className="font-mono font-bold text-orange-400">{systemHealth.backend.memory_usage}</span>
+                          </div>
+                          <div className="flex justify-between text-slate-400">
+                            <span>Hora del Servidor:</span>
+                            <span className="font-mono text-slate-300">{systemHealth.backend.server_time}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* MySQL Database */}
+                      <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-black text-white flex items-center gap-2">
+                            <span>🗄️</span> Base de Datos MySQL
+                          </span>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                            {systemHealth.database.status}
+                          </span>
+                        </div>
+                        <div className="space-y-1.5 text-xs">
+                          <div className="flex justify-between text-slate-400">
+                            <span>Latencia de Consulta:</span>
+                            <span className="font-mono font-bold text-emerald-400">{systemHealth.database.latency_ms} ms</span>
+                          </div>
+                          <div className="flex justify-between text-slate-400">
+                            <span>Total de Tablas:</span>
+                            <span className="font-mono font-bold text-white">{systemHealth.database.total_tables} tablas</span>
+                          </div>
+                          <div className="flex justify-between text-slate-400">
+                            <span>Base de Datos:</span>
+                            <span className="font-mono font-bold text-white">{systemHealth.database.database}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* WhatsApp Bot Microservicio */}
+                      <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-black text-white flex items-center gap-2">
+                            <span>📱</span> Microservicio WhatsApp
+                          </span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase border ${
+                            systemHealth.whatsapp.status === 'conectado'
+                              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                              : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                          }`}>
+                            {systemHealth.whatsapp.status}
+                          </span>
+                        </div>
+                        <div className="space-y-1.5 text-xs">
+                          <div className="flex justify-between text-slate-400">
+                            <span>Endpoint Interno:</span>
+                            <span className="font-mono text-white">{systemHealth.whatsapp.service}</span>
+                          </div>
+                          <div className="flex justify-between text-slate-400">
+                            <span>Estado de Conexión:</span>
+                            <span className="font-bold text-emerald-400">Enlace Activo</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Almacenamiento & Disco */}
+                      <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-3 lg:col-span-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-black text-white flex items-center gap-2">
+                            <span>💾</span> Almacenamiento & Cuota de Disco
+                          </span>
+                          <span className="text-xs font-mono font-bold text-slate-400">
+                            {systemHealth.storage.free_space_mb} MB libres de {systemHealth.storage.total_space_mb} MB
+                          </span>
+                        </div>
+                        <div className="w-full h-3 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                          <div
+                            className="h-full bg-gradient-to-r from-emerald-500 to-amber-500 rounded-full"
+                            style={{ width: `${Math.min(systemHealth.storage.used_percent, 100)}%` }}
+                          />
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          Utilización actual: <strong className="text-white">{systemHealth.storage.used_percent}%</strong> del volumen asignado.
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center text-slate-500 bg-slate-900 rounded-2xl border border-slate-800">
+                      Cargando diagnósticos del sistema...
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ──────────────────────────────────────────────────────────
+                  SUB-TAB 3: GESTIÓN DE RESPALDOS SAAS (BACKUPS)
+              ────────────────────────────────────────────────────────── */}
+              {subTabAuditoria === 'backups' && (
+                <div className="space-y-6">
+                  {/* Banner & Botón Generar */}
+                  <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div>
+                      <h3 className="text-base font-black text-white flex items-center gap-2">
+                        <span>💾</span> Copias de Seguridad de la Base de Datos
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Genera respaldos completos de MySQL con todas las tablas multi-tenant para contingencias
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleGenerarBackupManual}
+                      disabled={loadingBackup}
+                      className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-110 disabled:opacity-50 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition-all cursor-pointer"
+                    >
+                      <span>{loadingBackup ? '⏳' : '＋'}</span>
+                      <span>{loadingBackup ? 'Generando Dump...' : 'Generar Respaldo Ahora'}</span>
+                    </button>
+                  </div>
+
+                  {/* Tabla de Respaldos */}
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                          <tr>
+                            <th className="py-4 px-6">Archivo SQL</th>
+                            <th className="py-4 px-6">Tamaño</th>
+                            <th className="py-4 px-6">Tipo</th>
+                            <th className="py-4 px-6">Estado</th>
+                            <th className="py-4 px-6">Generado Por</th>
+                            <th className="py-4 px-6">Fecha & Hora</th>
+                            <th className="py-4 px-6 text-right">Descargar</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800 text-slate-200">
+                          {backupsList.length === 0 ? (
+                            <tr>
+                              <td colSpan="7" className="py-12 text-center text-slate-500">
+                                No hay respaldos generados aún. Presiona "Generar Respaldo Ahora" para crear el primero.
+                              </td>
+                            </tr>
+                          ) : (
+                            backupsList.map(b => (
+                              <tr key={b.id} className="hover:bg-slate-800/40 transition-colors">
+                                <td className="py-4 px-6 font-mono font-bold text-white flex items-center gap-2">
+                                  <span>📦</span>
+                                  <span>{b.archivo}</span>
+                                </td>
+
+                                <td className="py-4 px-6 font-mono text-emerald-400 font-bold">
+                                  {b.peso_bytes > 1024 * 1024
+                                    ? (b.peso_bytes / (1024 * 1024)).toFixed(2) + ' MB'
+                                    : (b.peso_bytes / 1024).toFixed(2) + ' KB'}
+                                </td>
+
+                                <td className="py-4 px-6">
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-slate-800 text-slate-300">
+                                    {b.tipo}
+                                  </span>
+                                </td>
+
+                                <td className="py-4 px-6">
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                    {b.estado}
+                                  </span>
+                                </td>
+
+                                <td className="py-4 px-6 text-slate-300">
+                                  {b.usuario?.nombre || 'Super Admin'}
+                                </td>
+
+                                <td className="py-4 px-6 font-mono text-slate-400 text-[11px]">
+                                  {new Date(b.created_at).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}
+                                </td>
+
+                                <td className="py-4 px-6 text-right">
+                                  <a
+                                    href={`/api/super-admin/sistema/backups/${b.id}/descargar`}
+                                    download={b.archivo}
+                                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-orange-400 hover:text-white rounded-lg font-bold text-xs inline-flex items-center gap-1.5 transition-all shadow-sm"
+                                  >
+                                    <span>📥</span>
+                                    <span>Descargar</span>
+                                  </a>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -4728,6 +5214,101 @@ export default function SuperAdminDashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: DIFF AUDITORÍA (FASE 9) */}
+      {modalDiffAuditoria && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-3xl w-full p-6 shadow-2xl animate-fade-in flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center pb-4 border-b border-slate-800 shrink-0">
+              <div>
+                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                  <span>👁️</span> Auditoría de Cambio #{modalDiffAuditoria.id}
+                </h3>
+                <p className="text-xs text-orange-400 mt-0.5 font-mono">
+                  {modalDiffAuditoria.accion} • {modalDiffAuditoria.entidad} #{modalDiffAuditoria.entidad_id || 'N/A'}
+                </p>
+              </div>
+              <button
+                onClick={() => setModalDiffAuditoria(null)}
+                className="text-slate-400 hover:text-white text-xl cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-4 py-4 pr-1">
+              {/* Metadatos */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-950 p-3.5 rounded-xl border border-slate-800 text-xs">
+                <div>
+                  <span className="text-[10px] text-slate-500 uppercase font-bold block">Usuario</span>
+                  <span className="font-bold text-white">{modalDiffAuditoria.usuario?.nombre || 'Sistema / Cron'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 uppercase font-bold block">Restaurante</span>
+                  <span className="font-bold text-white">{modalDiffAuditoria.negocio?.nombre_comercial || 'Plataforma Global'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 uppercase font-bold block">IP Origen</span>
+                  <span className="font-mono text-slate-300">{modalDiffAuditoria.ip || '127.0.0.1'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 uppercase font-bold block">Fecha & Hora</span>
+                  <span className="font-mono text-slate-300">{new Date(modalDiffAuditoria.created_at).toLocaleString('es-BO')}</span>
+                </div>
+              </div>
+
+              {/* Comparador Diff Antes vs Después */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-slate-950 border border-red-500/30 rounded-2xl p-4">
+                  <div className="flex items-center gap-2 mb-2 text-xs font-black uppercase tracking-wider text-red-400">
+                    <span>🔴</span>
+                    <span>Estado Anterior (Before)</span>
+                  </div>
+                  <pre className="text-[11px] font-mono text-slate-300 bg-slate-900/80 p-3 rounded-xl border border-slate-800 overflow-x-auto max-h-72 whitespace-pre-wrap">
+                    {modalDiffAuditoria.datos_anteriores
+                      ? JSON.stringify(
+                          typeof modalDiffAuditoria.datos_anteriores === 'string'
+                            ? JSON.parse(modalDiffAuditoria.datos_anteriores)
+                            : modalDiffAuditoria.datos_anteriores,
+                          null,
+                          2
+                        )
+                      : '— Sin datos previos (Creación o evento inicial) —'}
+                  </pre>
+                </div>
+
+                <div className="bg-slate-950 border border-emerald-500/30 rounded-2xl p-4">
+                  <div className="flex items-center gap-2 mb-2 text-xs font-black uppercase tracking-wider text-emerald-400">
+                    <span>🟢</span>
+                    <span>Nuevo Estado (After)</span>
+                  </div>
+                  <pre className="text-[11px] font-mono text-slate-300 bg-slate-900/80 p-3 rounded-xl border border-slate-800 overflow-x-auto max-h-72 whitespace-pre-wrap">
+                    {modalDiffAuditoria.datos_nuevos
+                      ? JSON.stringify(
+                          typeof modalDiffAuditoria.datos_nuevos === 'string'
+                            ? JSON.parse(modalDiffAuditoria.datos_nuevos)
+                            : modalDiffAuditoria.datos_nuevos,
+                          null,
+                          2
+                        )
+                      : '— Sin datos posteriores (Eliminación o evento final) —'}
+                  </pre>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-4 border-t border-slate-800 shrink-0">
+              <button
+                type="button"
+                onClick={() => setModalDiffAuditoria(null)}
+                className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold text-xs cursor-pointer"
+              >
+                Cerrar Detalle
+              </button>
+            </div>
           </div>
         </div>
       )}

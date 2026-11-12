@@ -103,11 +103,15 @@ Route::prefix('super-admin')->middleware(['auth:sanctum', 'super_admin'])->group
     Route::post('/soporte/tickets/{id}/responder', [SuperAdminController::class, 'responderTicket']);
     Route::put('/soporte/tickets/{id}/estado', [SuperAdminController::class, 'updateEstadoTicket']);
 
-    // 9. Auditoría y Notificaciones
+    // 9. Auditoría, Monitoreo y Respaldos (FASE 9)
     Route::get('/auditoria', [SuperAdminController::class, 'getAuditoria']);
     Route::get('/notificaciones', [SuperAdminController::class, 'getNotificaciones']);
     Route::post('/notificaciones/broadcast', [SuperAdminController::class, 'enviarNotificacionBroadcast']);
     Route::delete('/notificaciones/{id}', [SuperAdminController::class, 'deleteNotificacion']);
+    Route::get('/sistema/health', [SuperAdminController::class, 'getSystemHealth']);
+    Route::get('/sistema/backups', [SuperAdminController::class, 'getBackups']);
+    Route::post('/sistema/backups', [SuperAdminController::class, 'generarBackup']);
+    Route::get('/sistema/backups/{id}/descargar', [SuperAdminController::class, 'descargarBackup']);
 
     // 10. Configuración de Comprobantes y Facturación por Restaurante
     Route::prefix('facturacion')->group(function () {
