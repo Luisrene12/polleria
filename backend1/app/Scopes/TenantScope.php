@@ -16,8 +16,9 @@ class TenantScope implements Scope
     {
         $user = Auth::user();
 
-        // Si hay un usuario autenticado y NO es super_admin, aislar por su negocio_id
-        if ($user && $user->rol !== 'super_admin' && $user->negocio_id) {
+        // Si hay un usuario autenticado y NO es rol de plataforma SaaS, aislar por su negocio_id
+        $saasRoles = ['super_admin', 'admin_plataforma', 'finanzas', 'soporte', 'auditor'];
+        if ($user && !in_array($user->rol, $saasRoles) && $user->negocio_id) {
             $builder->where($model->getTable() . '.negocio_id', $user->negocio_id);
         }
     }

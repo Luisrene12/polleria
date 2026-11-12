@@ -17,8 +17,9 @@ class CheckModuloAcceso
     {
         $user = $request->user();
 
-        // 1. Super Administrador siempre tiene acceso total
-        if ($user && ($user->rol === 'super_admin' || $user->isSuperAdmin())) {
+        // 1. Roles SaaS de plataforma siempre tienen acceso total
+        $saasRoles = ['super_admin', 'admin_plataforma', 'finanzas', 'soporte', 'auditor'];
+        if ($user && (in_array($user->rol, $saasRoles) || $user->isSuperAdmin())) {
             return $next($request);
         }
 

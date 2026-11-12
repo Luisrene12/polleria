@@ -22,10 +22,11 @@ class SuperAdminMiddleware
             ], 401);
         }
 
-        if ($user->rol !== 'super_admin') {
+        $saasRoles = ['super_admin', 'admin_plataforma', 'finanzas', 'soporte', 'auditor'];
+        if (!in_array($user->rol, $saasRoles)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Acceso denegado. Se requieren permisos exclusivos de Super Administrador.',
+                'message' => 'Acceso denegado. Se requieren permisos de administración de la plataforma SaaS.',
             ], 403);
         }
 

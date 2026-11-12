@@ -19,7 +19,8 @@ trait BelongsToTenant
             $user = Auth::user();
 
             // Asignación forzosa del negocio del usuario autenticado (evita spoofing)
-            if ($user && $user->rol !== 'super_admin' && $user->negocio_id) {
+            $saasRoles = ['super_admin', 'admin_plataforma', 'finanzas', 'soporte', 'auditor'];
+            if ($user && !in_array($user->rol, $saasRoles) && $user->negocio_id) {
                 $model->negocio_id = $user->negocio_id;
             }
         });
