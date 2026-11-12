@@ -17,6 +17,16 @@ export const getNegocioById = async (id) => {
   return response.data;
 };
 
+export const getNegocioFicha = async (id) => {
+  const response = await api.get(`/super-admin/negocios/${id}/ficha`);
+  return response.data;
+};
+
+export const archivarNegocio = async (id, motivo = '') => {
+  const response = await api.post(`/super-admin/negocios/${id}/archivar`, { motivo });
+  return response.data;
+};
+
 export const createNegocio = async (payload) => {
   const response = await api.post('/super-admin/negocios', payload);
   return response.data;

@@ -29,3 +29,4 @@ class SaasBackup extends Model
         return $this->belongsTo(Usuario::class, 'usuario_id');
     }
 }
+

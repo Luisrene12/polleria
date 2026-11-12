@@ -87,3 +87,4 @@ class CheckModuloAcceso
         ], 403);
     }
 }
+

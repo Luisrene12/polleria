@@ -54,9 +54,11 @@ Route::prefix('super-admin')->middleware(['auth:sanctum', 'super_admin'])->group
     // 2. Restaurantes (Negocios)
     Route::get('/negocios', [SuperAdminController::class, 'getNegocios']);
     Route::get('/negocios/{id}', [SuperAdminController::class, 'getNegocioById']);
+    Route::get('/negocios/{id}/ficha', [SuperAdminController::class, 'getNegocioFicha']);
     Route::post('/negocios', [SuperAdminController::class, 'createNegocio']);
     Route::put('/negocios/{id}', [SuperAdminController::class, 'updateNegocio']);
     Route::post('/negocios/{id}/toggle-estado', [SuperAdminController::class, 'toggleEstadoNegocio']);
+    Route::post('/negocios/{id}/archivar', [SuperAdminController::class, 'archivarNegocio']);
     Route::post('/negocios/{id}/reset-password', [SuperAdminController::class, 'resetAdminPassword']);
 
     // 3. Dominios y URL

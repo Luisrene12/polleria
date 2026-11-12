@@ -3,9 +3,11 @@ import {
   getSuperAdminDashboard,
   getNegocios,
   getNegocioById,
+  getNegocioFicha,
   createNegocio,
   updateNegocio,
   toggleEstadoNegocio,
+  archivarNegocio,
   resetAdminPassword,
   getDominios,
   checkDisponibilidadSubdominio,
@@ -263,14 +265,66 @@ export default function SuperAdminDashboard() {
     }
   };
 
-  // Ver Detalle Negocio
+  // Ver Detalle Negocio en Ficha de 10 Pestañas
   const handleVerDetalle = async (id) => {
     try {
-      const res = await getNegocioById(id);
+      const res = await getNegocioFicha(id);
       setNegocioSeleccionado(res);
       setShowModalDetalleNegocio(true);
     } catch (err) {
-      toast.error('Error al obtener información del negocio');
+      toast.error('Error al obtener ficha del restaurante');
+    }
+  };
+
+  // Archivar Restaurante (Procedimiento controlado sin pérdida de datos)
+  const handleArchivar = async (id, nombre) => {
+    const motivo = prompt(`¿Estás seguro de archivar el restaurante "${nombre}"? Toda su información histórica se mantendrá intacta. Ingresa el motivo:`, 'Procedimiento administrativo');
+    if (!motivo) return;
+    try {
+      const res = await archivarNegocio(id, motivo);
+      toast.success(res.message);
+      const negs = await getNegocios(filtroNegocios);
+      setNegocios(negs);
+    } catch (err) {
+      toast.error('Error al archivar restaurante');
+    }
+  };
+
+  // Exportar Restaurantes a CSV
+  const handleExportarRestaurantes = async () => {
+    try {
+      toast.loading('Generando reporte CSV...', { id: 'exp' });
+      const data = await getNegocios({ ...filtroNegocios, export: 'true' });
+      if (!data || data.length === 0) {
+        toast.error('No hay datos para exportar', { id: 'exp' });
+        return;
+      }
+      const headers = Object.keys(data[0]).join(',');
+      const rows = data.map(row => Object.values(row).map(val => `"${String(val ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+      const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + headers + '\n' + rows;
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', `restaurantes_saas_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success('Reporte CSV descargado con éxito', { id: 'exp' });
+    } catch (err) {
+      toast.error('Error al exportar restaurantes', { id: 'exp' });
+    }
+  };
+
+  // Toggle Módulo dentro de la Ficha Integral del Restaurante
+  const handleToggleModuloEnFicha = async (funcId) => {
+    if (!negocioSeleccionado?.negocio?.id) return;
+    try {
+      await toggleModuloNegocio(negocioSeleccionado.negocio.id, funcId);
+      toast.success('Módulo actualizado en el restaurante');
+      const res = await getNegocioFicha(negocioSeleccionado.negocio.id);
+      setNegocioSeleccionado(res);
+    } catch (err) {
+      toast.error('Error al actualizar módulo');
     }
   };
 
@@ -636,31 +690,61 @@ export default function SuperAdminDashboard() {
           {activeTab === 'restaurantes' && (
             <div className="space-y-6">
               
-              {/* Barra de Filtros y Búsqueda */}
-              <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex flex-col md:flex-row gap-4 items-center justify-between">
-                <div className="flex flex-1 gap-3 w-full">
+              {/* Barra de Filtros, Búsqueda y Acciones */}
+              <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col lg:flex-row gap-4 items-center justify-between shadow-xl">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 w-full lg:w-auto flex-1">
                   <input
                     type="text"
-                    placeholder="Buscar restaurante por nombre, subdominio, email, ciudad..."
-                    value={filtroNegocios.search}
+                    placeholder="Buscar por nombre, subdominio, NIT, email..."
+                    value={filtroNegocios.search || ''}
                     onChange={(e) => setFiltroNegocios({ ...filtroNegocios, search: e.target.value })}
-                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+                    className="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
                   />
                   <select
-                    value={filtroNegocios.estado}
+                    value={filtroNegocios.estado || ''}
                     onChange={(e) => setFiltroNegocios({ ...filtroNegocios, estado: e.target.value })}
-                    className="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-300 focus:outline-none focus:border-orange-500"
+                    className="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-300 focus:outline-none focus:border-orange-500 cursor-pointer"
                   >
                     <option value="">Todos los Estados</option>
                     <option value="activo">Activos</option>
                     <option value="suspendido">Suspendidos</option>
                     <option value="pendiente">Pendientes</option>
+                    <option value="cancelado">Archivados / Cancelados</option>
                   </select>
+                  <select
+                    value={filtroNegocios.plan_id || ''}
+                    onChange={(e) => setFiltroNegocios({ ...filtroNegocios, plan_id: e.target.value })}
+                    className="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-300 focus:outline-none focus:border-orange-500 cursor-pointer"
+                  >
+                    <option value="">Todos los Planes</option>
+                    {planes.map(p => (
+                      <option key={p.id} value={p.id}>{p.nombre}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="date"
+                    value={filtroNegocios.fecha_desde || ''}
+                    onChange={(e) => setFiltroNegocios({ ...filtroNegocios, fecha_desde: e.target.value })}
+                    className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-orange-500"
+                    title="Fecha Registro Desde"
+                  />
                 </div>
                 
-                <span className="text-xs font-bold text-slate-400">
-                  {negocios.length} restaurante(s) encontrados
-                </span>
+                <div className="flex items-center gap-2.5 w-full lg:w-auto justify-end">
+                  <button
+                    onClick={handleExportarRestaurantes}
+                    className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
+                    title="Exportar listado a Excel / CSV"
+                  >
+                    <span>📥</span> Exportar CSV
+                  </button>
+                  <button
+                    onClick={() => setShowModalCrearNegocio(true)}
+                    className="px-5 py-2.5 bg-gradient-to-r from-orange-500 to-amber-600 hover:brightness-110 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-lg shadow-orange-500/30 cursor-pointer"
+                  >
+                    <span>＋</span> Nuevo Restaurante
+                  </button>
+                </div>
               </div>
 
               {/* Tabla de Restaurantes */}
@@ -694,7 +778,7 @@ export default function SuperAdminDashboard() {
                                 rel="noreferrer"
                                 className="hover:underline flex items-center gap-1.5"
                               >
-                                🔗 {dominioPrincipal}.mipos.com
+                                🔗 {dominioPrincipal}.polleriasaas.com
                               </a>
                             </td>
                             <td className="py-4 px-6">
@@ -710,6 +794,8 @@ export default function SuperAdminDashboard() {
                               <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${
                                 neg.estado === 'activo'
                                   ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                  : neg.estado === 'suspendido'
+                                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
                                   : 'bg-red-500/10 text-red-400 border-red-500/30'
                               }`}>
                                 {neg.estado}
@@ -718,24 +804,31 @@ export default function SuperAdminDashboard() {
                             <td className="py-4 px-6 text-right space-x-2">
                               <button
                                 onClick={() => handleVerDetalle(neg.id)}
-                                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg font-bold transition-all"
-                                title="Ver información completa"
+                                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg font-bold transition-all cursor-pointer"
+                                title="Ver Ficha Integral de 10 Pestañas"
                               >
-                                👁️ Detalle
+                                👁️ Ficha
                               </button>
                               <button
                                 onClick={() => handleToggleEstado(neg.id)}
-                                className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${
+                                className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all cursor-pointer ${
                                   neg.estado === 'activo'
-                                    ? 'bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white border border-red-500/30'
+                                    ? 'bg-amber-500/20 hover:bg-amber-500 text-amber-400 hover:text-white border border-amber-500/30'
                                     : 'bg-emerald-500/20 hover:bg-emerald-500 text-emerald-400 hover:text-white border border-emerald-500/30'
                                 }`}
                               >
                                 {neg.estado === 'activo' ? '⛔ Suspender' : '✅ Reactivar'}
                               </button>
                               <button
+                                onClick={() => handleArchivar(neg.id, neg.nombre_comercial)}
+                                className="px-2.5 py-1.5 bg-red-950/40 hover:bg-red-600 text-red-400 hover:text-white rounded-lg border border-red-500/30 transition-all cursor-pointer"
+                                title="Archivar restaurante (eliminación lógica controlada)"
+                              >
+                                🗄️
+                              </button>
+                              <button
                                 onClick={() => handleResetPassword(neg.id, neg.nombre_comercial)}
-                                className="px-2.5 py-1.5 bg-slate-800 hover:bg-amber-600 text-slate-300 hover:text-white rounded-lg transition-all"
+                                className="px-2.5 py-1.5 bg-slate-800 hover:bg-amber-600 text-slate-300 hover:text-white rounded-lg transition-all cursor-pointer"
                                 title="Resetear contraseña admin"
                               >
                                 🔑
@@ -1650,19 +1743,26 @@ export default function SuperAdminDashboard() {
               <button onClick={() => { setShowModalDetalleNegocio(false); setModalDetalleTab('general'); }} className="text-slate-400 hover:text-white text-xl">✕</button>
             </div>
 
-            {/* Sub-navegación del modal */}
-            <div className="flex gap-1 px-7 pt-4 pb-0 shrink-0 border-b border-slate-800/60">
+            {/* Sub-navegación del modal: Las 10 Pestañas Oficiales */}
+            <div className="flex gap-1 px-5 pt-3 pb-0 shrink-0 border-b border-slate-800/60 overflow-x-auto no-scrollbar">
               {[
-                { id: 'general',      label: 'Información General', icon: '📋' },
-                { id: 'usuarios',     label: 'Personal',            icon: '👥' },
-                { id: 'facturacion',  label: 'Comprobantes',        icon: '🧾' },
+                { id: 'general',      label: 'General',       icon: '📋' },
+                { id: 'suscripcion',  label: 'Suscripción',   icon: '⏱️' },
+                { id: 'pagos',        label: 'Pagos SaaS',    icon: '💳' },
+                { id: 'usuarios',     label: 'Usuarios',      icon: '👥' },
+                { id: 'dominios',     label: 'Dominios & SSL',icon: '🌐' },
+                { id: 'modulos',      label: 'Módulos',       icon: '🧩' },
+                { id: 'sucursales',   label: 'Sucursales',    icon: '🏢' },
+                { id: 'actividad',    label: 'Actividad',     icon: '📜' },
+                { id: 'soporte',      label: 'Soporte',       icon: '🎧' },
+                { id: 'configuracion',label: 'Configuración', icon: '⚙️' },
               ].map(tab => (
                 <button
                   key={tab.id}
                   onClick={() => setModalDetalleTab(tab.id)}
-                  className={`px-4 py-2.5 text-xs font-bold rounded-t-lg transition-all flex items-center gap-1.5 border-b-2 ${
+                  className={`px-3 py-2 text-xs font-bold rounded-t-lg transition-all flex items-center gap-1.5 border-b-2 shrink-0 cursor-pointer ${
                     modalDetalleTab === tab.id
-                      ? 'text-orange-400 border-orange-500 bg-orange-500/5'
+                      ? 'text-orange-400 border-orange-500 bg-orange-500/10'
                       : 'text-slate-400 border-transparent hover:text-white hover:bg-slate-800/40'
                   }`}
                 >
@@ -1671,75 +1771,407 @@ export default function SuperAdminDashboard() {
               ))}
             </div>
 
-            {/* Body scrollable */}
-            <div className="flex-1 overflow-y-auto p-7 space-y-6">
+            {/* Body scrollable con las 10 Pestañas */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
-              {/* ── TAB: INFORMACIÓN GENERAL ── */}
+              {/* ── TAB 1: INFORMACIÓN GENERAL & ESTADÍSTICAS ── */}
               {modalDetalleTab === 'general' && (
-                <>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                <div className="space-y-5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-center">
                     <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
                       <span className="text-[10px] text-slate-500 uppercase font-bold">Ventas Totales</span>
-                      <div className="text-base font-black text-emerald-400 mt-1">Bs. {negocioSeleccionado.monto_total_ventas?.toFixed(2)}</div>
+                      <div className="text-sm font-black text-emerald-400 mt-1">
+                        Bs. {(negocioSeleccionado.estadisticas?.monto_ventas || 0).toFixed(2)}
+                      </div>
                     </div>
                     <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
                       <span className="text-[10px] text-slate-500 uppercase font-bold">Transacciones</span>
-                      <div className="text-base font-black text-white mt-1">{negocioSeleccionado.negocio.ventas_count || 0}</div>
+                      <div className="text-sm font-black text-white mt-1">
+                        {negocioSeleccionado.estadisticas?.total_ventas || 0}
+                      </div>
                     </div>
                     <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
                       <span className="text-[10px] text-slate-500 uppercase font-bold">Productos</span>
-                      <div className="text-base font-black text-white mt-1">{negocioSeleccionado.negocio.productos_count || 0}</div>
+                      <div className="text-sm font-black text-white mt-1">
+                        {negocioSeleccionado.estadisticas?.total_productos || 0}
+                      </div>
                     </div>
                     <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
                       <span className="text-[10px] text-slate-500 uppercase font-bold">Usuarios POS</span>
-                      <div className="text-base font-black text-white mt-1">{negocioSeleccionado.negocio.usuarios_count || 0}</div>
+                      <div className="text-sm font-black text-white mt-1">
+                        {negocioSeleccionado.estadisticas?.total_usuarios || 0}
+                      </div>
+                    </div>
+                    <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                      <span className="text-[10px] text-slate-500 uppercase font-bold">Almacenamiento</span>
+                      <div className="text-sm font-black text-amber-400 mt-1">
+                        {negocioSeleccionado.estadisticas?.almacenamiento_mb || 0} MB
+                      </div>
+                    </div>
+                    <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                      <span className="text-[10px] text-slate-500 uppercase font-bold">Última Actividad</span>
+                      <div className="text-[11px] font-bold text-slate-300 mt-1 truncate">
+                        {negocioSeleccionado.estadisticas?.ultima_actividad ? new Date(negocioSeleccionado.estadisticas.ultima_actividad).toLocaleDateString() : 'Sin actividad'}
+                      </div>
                     </div>
                   </div>
 
-                  {negocioSeleccionado.admin_principal && (
+                  {/* Tarjeta de Ficha Comercial */}
+                  <div className="bg-slate-950 rounded-2xl border border-slate-800 p-5 space-y-4">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-orange-400">Datos Comerciales y Ubicación</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
+                      <div>
+                        <span className="text-slate-500 block">Razón Social:</span>
+                        <span className="font-bold text-white">{negocioSeleccionado.negocio.razon_social || 'No especificada'}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">NIT / CI:</span>
+                        <span className="font-bold text-white">{negocioSeleccionado.negocio.nit || 'Sin NIT'}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Email de Contacto:</span>
+                        <span className="font-bold text-white">{negocioSeleccionado.negocio.email}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Teléfono / WhatsApp:</span>
+                        <span className="font-bold text-white">{negocioSeleccionado.negocio.telefono || 'Sin teléfono'}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Dirección:</span>
+                        <span className="font-bold text-white">{negocioSeleccionado.negocio.direccion || 'Sin dirección'}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Ciudad / Departamento:</span>
+                        <span className="font-bold text-white">{negocioSeleccionado.negocio.ciudad} • {negocioSeleccionado.negocio.departamento}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Fecha de Registro:</span>
+                        <span className="font-bold text-white">{new Date(negocioSeleccionado.negocio.created_at).toLocaleDateString()}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Estado Operativo:</span>
+                        <span className="font-black uppercase text-emerald-400">{negocioSeleccionado.negocio.estado}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Rubro Gastronómico:</span>
+                        <span className="font-bold text-white capitalize">{negocioSeleccionado.negocio.rubro || 'Pollería'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Propietario / Admin */}
+                  {negocioSeleccionado.propietario && (
                     <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 flex justify-between items-center text-xs">
                       <div>
-                        <div className="text-[10px] uppercase font-bold text-slate-500">Administrador del Negocio</div>
-                        <div className="font-bold text-white text-sm">{negocioSeleccionado.admin_principal.nombre}</div>
-                        <div className="text-slate-400 font-mono">Usuario: {negocioSeleccionado.admin_principal.username}</div>
+                        <div className="text-[10px] uppercase font-bold text-slate-500">Propietario / Administrador Principal</div>
+                        <div className="font-bold text-white text-sm">{negocioSeleccionado.propietario.nombre}</div>
+                        <div className="text-slate-400 font-mono">Usuario: {negocioSeleccionado.propietario.username} • {negocioSeleccionado.propietario.email}</div>
                       </div>
                       <button
                         onClick={() => handleResetPassword(negocioSeleccionado.negocio.id, negocioSeleccionado.negocio.nombre_comercial)}
-                        className="px-3 py-1.5 bg-slate-800 hover:bg-orange-500 text-slate-200 hover:text-white rounded-lg font-bold transition-all"
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-orange-500 text-slate-200 hover:text-white rounded-lg font-bold transition-all cursor-pointer"
                       >
                         🔑 Resetear PIN
                       </button>
                     </div>
                   )}
-                </>
+                </div>
               )}
 
-              {/* ── TAB: PERSONAL / USUARIOS ── */}
+              {/* ── TAB 2: SUSCRIPCIÓN ── */}
+              {modalDetalleTab === 'suscripcion' && (
+                <div className="space-y-5">
+                  <div className="p-5 bg-slate-950 rounded-2xl border border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                      <span className="text-[10px] uppercase font-black text-orange-400">Plan Actual Contratado</span>
+                      <h4 className="text-xl font-black text-white mt-0.5">
+                        {negocioSeleccionado.suscripcion?.activa?.plan?.nombre || 'Sin Plan Activo'}
+                      </h4>
+                      <div className="text-xs text-slate-400 mt-1 flex flex-wrap gap-4">
+                        <span>Precio: <b className="text-emerald-400 font-black">Bs. {negocioSeleccionado.suscripcion?.activa?.plan?.precio}</b></span>
+                        <span>Vence: <b className="text-white">{negocioSeleccionado.suscripcion?.activa?.fecha_fin ? new Date(negocioSeleccionado.suscripcion.activa.fecha_fin).toLocaleDateString() : 'N/A'}</b></span>
+                        <span>Días de Gracia: <b className="text-white">{negocioSeleccionado.suscripcion?.activa?.dias_gracia ?? 5} días</b></span>
+                      </div>
+                    </div>
+                    <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                      {negocioSeleccionado.suscripcion?.activa?.estado || 'Inactiva'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <h5 className="text-xs font-black uppercase text-slate-400 mb-2">Histórico de Suscripciones</h5>
+                    <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-900 text-slate-400 border-b border-slate-800">
+                          <tr>
+                            <th className="p-3">Plan</th>
+                            <th className="p-3">Inicio</th>
+                            <th className="p-3">Vencimiento</th>
+                            <th className="p-3">Estado</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800 text-slate-300">
+                          {(negocioSeleccionado.suscripcion?.historial || []).map(s => (
+                            <tr key={s.id}>
+                              <td className="p-3 font-bold text-white">{s.plan?.nombre}</td>
+                              <td className="p-3">{new Date(s.fecha_inicio).toLocaleDateString()}</td>
+                              <td className="p-3">{new Date(s.fecha_fin).toLocaleDateString()}</td>
+                              <td className="p-3 uppercase font-bold text-orange-400">{s.estado}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── TAB 3: PAGOS SAAS ── */}
+              {modalDetalleTab === 'pagos' && (
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black uppercase text-slate-400">Historial Financiero de Pagos SaaS</h4>
+                  <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-900 text-slate-400 border-b border-slate-800">
+                        <tr>
+                          <th className="p-3">Fecha</th>
+                          <th className="p-3">Monto</th>
+                          <th className="p-3">Método</th>
+                          <th className="p-3">Referencia</th>
+                          <th className="p-3">Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800 text-slate-300">
+                        {(negocioSeleccionado.pagos || []).length === 0 ? (
+                          <tr><td colSpan="5" className="p-4 text-center text-slate-500">No hay pagos registrados para este restaurante</td></tr>
+                        ) : (
+                          (negocioSeleccionado.pagos || []).map(p => (
+                            <tr key={p.id}>
+                              <td className="p-3">{new Date(p.fecha_pago).toLocaleDateString()}</td>
+                              <td className="p-3 font-black text-emerald-400">Bs. {p.monto}</td>
+                              <td className="p-3 uppercase font-bold">{p.metodo_pago}</td>
+                              <td className="p-3 font-mono">{p.referencia || 'N/A'}</td>
+                              <td className="p-3">
+                                <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-slate-800 text-orange-400">
+                                  {p.estado}
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* ── TAB 4: USUARIOS ── */}
               {modalDetalleTab === 'usuarios' && (
-                <div>
-                  <h4 className="text-xs font-black uppercase text-slate-400 mb-2">Personal del Restaurante</h4>
-                  <div className="divide-y divide-slate-800 border border-slate-800 rounded-xl overflow-hidden bg-slate-950">
-                    {(negocioSeleccionado.negocio.usuarios || []).map(u => (
-                      <div key={u.id} className="p-3 flex justify-between items-center text-xs">
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black uppercase text-slate-400">Personal Registrado en este Restaurante</h4>
+                  <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-900 text-slate-400 border-b border-slate-800">
+                        <tr>
+                          <th className="p-3">Nombre</th>
+                          <th className="p-3">Usuario</th>
+                          <th className="p-3">Rol</th>
+                          <th className="p-3">Último Acceso</th>
+                          <th className="p-3">Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800 text-slate-300">
+                        {(negocioSeleccionado.usuarios || []).map(u => (
+                          <tr key={u.id}>
+                            <td className="p-3 font-bold text-white">{u.nombre}</td>
+                            <td className="p-3 font-mono text-slate-400">{u.username}</td>
+                            <td className="p-3 uppercase font-bold text-orange-400">{u.rol}</td>
+                            <td className="p-3 text-[11px] text-slate-400">
+                              {u.ultimo_login ? new Date(u.ultimo_login).toLocaleString() : 'Nunca'}
+                            </td>
+                            <td className="p-3">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                                u.activo ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+                              }`}>
+                                {u.activo ? 'Activo' : 'Inactivo'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* ── TAB 5: DOMINIOS Y SSL ── */}
+              {modalDetalleTab === 'dominios' && (
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black uppercase text-slate-400">Dominios Asignados y Certificados SSL</h4>
+                  <div className="space-y-3">
+                    {(negocioSeleccionado.dominios || []).map(d => (
+                      <div key={d.id} className="p-4 bg-slate-950 rounded-xl border border-slate-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                         <div>
-                          <span className="font-bold text-white">{u.nombre}</span>
-                          <span className="text-slate-500 ml-2 font-mono">({u.username})</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-sm font-bold text-orange-400">{d.url_completa || `${d.subdominio}.polleriasaas.com`}</span>
+                            {d.principal && <span className="px-2 py-0.5 rounded bg-orange-500/20 text-orange-400 text-[10px] font-black uppercase">Principal</span>}
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-1 flex gap-4">
+                            <span>SSL: <b className="text-emerald-400">Let's Encrypt (Activo)</b></span>
+                            <span>Vence: <b className="text-slate-300">{d.ssl_vence}</b></span>
+                          </div>
                         </div>
-                        <span className="px-2 py-0.5 rounded bg-slate-800 text-[10px] font-bold text-orange-400 uppercase">
-                          {u.rol}
-                        </span>
+                        <a 
+                          href={d.url_completa}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-bold"
+                        >
+                          🔗 Abrir URL
+                        </a>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* ── TAB: COMPROBANTES / FACTURACIÓN ── */}
-              {modalDetalleTab === 'facturacion' && (
-                <BillingConfigPanel
-                  negocioId={negocioSeleccionado.negocio.id}
-                  negocioNombre={negocioSeleccionado.negocio.nombre_comercial}
-                />
+              {/* ── TAB 6: MÓDULOS Y ADDONS ── */}
+              {modalDetalleTab === 'modulos' && (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-xs font-black uppercase text-slate-400">Catálogo de 14 Módulos y Addons Contratados</h4>
+                    <span className="text-[11px] text-orange-400 font-bold">Autorización directa en Backend</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {(negocioSeleccionado.modulos || []).map(m => (
+                      <div key={m.id} className="p-3.5 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between gap-3">
+                        <div>
+                          <div className="font-bold text-white text-xs flex items-center gap-2">
+                            <span>{m.nombre}</span>
+                            <span className={`text-[9px] px-1.5 py-0.2 rounded font-black uppercase ${
+                              m.incluido_en_plan ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'
+                            }`}>
+                              {m.incluido_en_plan ? 'Plan' : 'Addon'}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">{m.descripcion}</p>
+                        </div>
+                        <button
+                          onClick={() => handleToggleModuloEnFicha(m.id)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase transition-all shrink-0 cursor-pointer ${
+                            m.habilitado
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500 hover:text-white'
+                              : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+                          }`}
+                        >
+                          {m.habilitado ? 'Habilitado' : 'Inactivo'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── TAB 7: SUCURSALES ── */}
+              {modalDetalleTab === 'sucursales' && (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-xs font-black uppercase text-slate-400">Locales y Sucursales</h4>
+                    <span className="text-xs font-bold text-slate-400">
+                      Usadas: <b className="text-white">{negocioSeleccionado.sucursales?.usadas || 1}</b> / Límite Plan: <b className="text-orange-400">{negocioSeleccionado.sucursales?.limite_plan || 1}</b>
+                    </span>
+                  </div>
+                  <div className="space-y-3">
+                    {(negocioSeleccionado.sucursales?.lista || []).map(suc => (
+                      <div key={suc.id} className="p-4 bg-slate-950 rounded-xl border border-slate-800 flex justify-between items-center">
+                        <div>
+                          <div className="font-bold text-white text-sm flex items-center gap-2">
+                            <span>{suc.nombre}</span>
+                            {suc.es_casa_matriz && <span className="px-2 py-0.5 bg-amber-500/20 text-amber-400 text-[10px] font-black uppercase rounded">Casa Matriz</span>}
+                          </div>
+                          <div className="text-xs text-slate-400 mt-1">{suc.direccion} • {suc.ciudad}</div>
+                        </div>
+                        <span className="text-xs font-black uppercase text-emerald-400">Operativa</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── TAB 8: ACTIVIDAD Y AUDITORÍA ── */}
+              {modalDetalleTab === 'actividad' && (
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black uppercase text-slate-400">Bitácora de Trazabilidad y Auditoría</h4>
+                  <div className="divide-y divide-slate-800 border border-slate-800 rounded-xl overflow-hidden bg-slate-950">
+                    {(negocioSeleccionado.actividad || []).length === 0 ? (
+                      <div className="p-4 text-center text-slate-500 text-xs">Sin registros de auditoría recientes</div>
+                    ) : (
+                      (negocioSeleccionado.actividad || []).map(a => (
+                        <div key={a.id} className="p-3 text-xs flex justify-between items-center">
+                          <div>
+                            <div className="font-bold text-white capitalize">{a.accion.replace('_', ' ')}</div>
+                            <div className="text-[11px] text-slate-400">Por: <span className="text-slate-200">{a.usuario?.nombre || 'Sistema'}</span> • {a.descripcion}</div>
+                          </div>
+                          <div className="text-right text-[11px] text-slate-500 font-mono">
+                            {new Date(a.creado_en || a.created_at).toLocaleString()}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── TAB 9: SOPORTE TÉCNICO ── */}
+              {modalDetalleTab === 'soporte' && (
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black uppercase text-slate-400">Tickets de Soporte Técnico del Restaurante</h4>
+                  <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-900 text-slate-400 border-b border-slate-800">
+                        <tr>
+                          <th className="p-3">#</th>
+                          <th className="p-3">Asunto</th>
+                          <th className="p-3">Prioridad</th>
+                          <th className="p-3">Estado</th>
+                          <th className="p-3 text-right">Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800 text-slate-300">
+                        {(negocioSeleccionado.soporte || []).length === 0 ? (
+                          <tr><td colSpan="5" className="p-4 text-center text-slate-500">No hay tickets de soporte registrados</td></tr>
+                        ) : (
+                          (negocioSeleccionado.soporte || []).map(t => (
+                            <tr key={t.id}>
+                              <td className="p-3 font-mono">#{t.id}</td>
+                              <td className="p-3 font-bold text-white">{t.asunto}</td>
+                              <td className="p-3 uppercase font-bold text-orange-400">{t.prioridad}</td>
+                              <td className="p-3 uppercase font-bold text-slate-300">{t.estado}</td>
+                              <td className="p-3 text-right">
+                                <button
+                                  onClick={() => handleAbrirTicket(t.id)}
+                                  className="px-2.5 py-1 bg-slate-800 hover:bg-orange-500 text-white rounded text-[11px] font-bold"
+                                >
+                                  Responder
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* ── TAB 10: CONFIGURACIÓN & FACTURACIÓN ── */}
+              {modalDetalleTab === 'configuracion' && (
+                <div className="space-y-6">
+                  <BillingConfigPanel
+                    negocioId={negocioSeleccionado.negocio.id}
+                    negocioNombre={negocioSeleccionado.negocio.nombre_comercial}
+                  />
+                </div>
               )}
 
             </div>
@@ -1748,7 +2180,7 @@ export default function SuperAdminDashboard() {
             <div className="flex justify-end px-7 py-4 border-t border-slate-800 shrink-0">
               <button
                 onClick={() => { setShowModalDetalleNegocio(false); setModalDetalleTab('general'); }}
-                className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold text-xs"
+                className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold text-xs cursor-pointer"
               >
                 Cerrar
               </button>
