@@ -87,6 +87,7 @@ Route::prefix('super-admin')->middleware(['auth:sanctum', 'super_admin'])->group
     Route::get('/modulos', [SuperAdminController::class, 'getModulosGlobales']);
     Route::get('/negocios/{id}/modulos', [SuperAdminController::class, 'getModulosNegocio']);
     Route::post('/negocios/{id}/modulos/{funcionalidadId}/toggle', [SuperAdminController::class, 'toggleModuloNegocio']);
+    Route::delete('/negocios/{id}/modulos/{funcionalidadId}/reset', [SuperAdminController::class, 'resetModuloNegocio']);
 
     // 7. Usuarios de la Plataforma
     Route::get('/usuarios', [SuperAdminController::class, 'getUsuarios']);
@@ -173,15 +174,15 @@ Route::middleware(['auth:sanctum', 'negocio_activo'])->group(function () {
 
     // 6. Reportes
     Route::prefix('reportes')->group(function () {
-        Route::get('/ventas-por-cajero',  [ReporteController::class, 'getVentasPorCajero'])->middleware('admin');
-        Route::get('/ventas-por-producto',[ReporteController::class, 'getVentasPorProducto'])->middleware('admin');
+        Route::get('/ventas-por-cajero',  [ReporteController::class, 'getVentasPorCajero'])->middleware(['admin', 'modulo:reportes_avanzados']);
+        Route::get('/ventas-por-producto',[ReporteController::class, 'getVentasPorProducto'])->middleware(['admin', 'modulo:reportes_avanzados']);
         Route::get('/ventas-generales',   [ReporteController::class, 'getVentasGenerales']);
         Route::get('/dashboard',          [ReporteController::class, 'getDashboardMetrics']);
-        Route::get('/backup-completo',    [ReporteController::class, 'getFullBackup'])->middleware('admin');
+        Route::get('/backup-completo',    [ReporteController::class, 'getFullBackup'])->middleware(['admin', 'modulo:backup_export']);
     });
 
     // 7. Notificaciones WhatsApp
-    Route::prefix('whatsapp')->group(function () {
+    Route::prefix('whatsapp')->middleware('modulo:whatsapp_bot')->group(function () {
         Route::get('/config',          [WhatsAppController::class, 'getConfig']);
         Route::post('/config',         [WhatsAppController::class, 'saveConfig']);
         Route::post('/test',           [WhatsAppController::class, 'sendTestNotification']);
@@ -198,7 +199,7 @@ Route::middleware(['auth:sanctum', 'negocio_activo'])->group(function () {
     });
 
     // 8. Facturación y Comprobantes (POS / Panel del Negocio)
-    Route::prefix('mi-facturacion')->group(function () {
+    Route::prefix('mi-facturacion')->middleware('modulo:facturacion_electronica')->group(function () {
         Route::get('/config',          [BillingConfigController::class, 'getMiConfiguracion']);
         Route::get('/comprobantes',    [BillingConfigController::class, 'getComprobantes']);
         Route::post('/nota-venta',     [BillingConfigController::class, 'registrarNotaVenta']);

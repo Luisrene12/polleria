@@ -33,6 +33,14 @@ export default function Navbar() {
 
   const isActive = (path) => location.pathname === path;
 
+  const hasModulo = (moduloCode) => {
+    if (!user) return false;
+    if (user.rol === 'super_admin') return true;
+    const modulos = user.negocio?.modulos;
+    if (!modulos) return true;
+    return modulos.includes(moduloCode);
+  };
+
   return (
     <nav className="bg-[#101318]/95 backdrop-blur-xl border-b border-[#212631] sticky top-0 z-[100] shadow-2xl relative overflow-hidden">
       
@@ -162,23 +170,40 @@ export default function Navbar() {
                   <span>PRODUCTOS</span>
                 </Link>
 
-                {/* WHATSAPP */}
-                <Link 
-                  to="/whatsapp" 
-                  className={`px-4 py-2 rounded-xl flex items-center gap-2 font-extrabold text-xs uppercase tracking-wider transition-all duration-200 ${
-                    isActive('/whatsapp') 
-                      ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/30 rounded-full' 
-                      : 'text-zinc-300 hover:text-white hover:bg-[#1a1f29]'
-                  }`}
-                >
-                  <span className="text-base leading-none text-emerald-400">💬</span>
-                  <span>WHATSAPP</span>
-                </Link>
+                {/* WHATSAPP (condicionado por módulo contratado) */}
+                {hasModulo('whatsapp_bot') && (
+                  <Link 
+                    to="/whatsapp" 
+                    className={`px-4 py-2 rounded-xl flex items-center gap-2 font-extrabold text-xs uppercase tracking-wider transition-all duration-200 ${
+                      isActive('/whatsapp') 
+                        ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/30 rounded-full' 
+                        : 'text-zinc-300 hover:text-white hover:bg-[#1a1f29]'
+                    }`}
+                  >
+                    <span className="text-base leading-none text-emerald-400">💬</span>
+                    <span>WHATSAPP</span>
+                  </Link>
+                )}
+
+                {/* FACTURACIÓN (condicionado por módulo) */}
+                {(user?.rol === 'admin' || user?.rol === 'super_admin') && hasModulo('facturacion_electronica') && (
+                  <Link 
+                    to="/facturacion" 
+                    className={`px-4 py-2 rounded-xl flex items-center gap-2 font-extrabold text-xs uppercase tracking-wider transition-all duration-200 ${
+                      isActive('/facturacion') 
+                        ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/30 rounded-full' 
+                        : 'text-zinc-300 hover:text-white hover:bg-[#1a1f29]'
+                    }`}
+                  >
+                    <span className="text-base leading-none text-cyan-400">🏛️</span>
+                    <span>FACTURACIÓN</span>
+                  </Link>
+                )}
               </>
             )}
 
             {/* USUARIOS */}
-            {(user?.rol === 'admin' || user?.rol === 'super_admin') && (
+            {(user?.rol === 'admin' || user?.rol === 'super_admin') && hasModulo('usuarios_roles') && (
               <Link 
                 to="/usuarios" 
                 className={`px-4 py-2 rounded-xl flex items-center gap-2 font-extrabold text-xs uppercase tracking-wider transition-all duration-200 ${
@@ -295,11 +320,19 @@ export default function Navbar() {
                  <span>📦</span>
                  <span>PRODUCTOS</span>
               </Link>
-              <Link onClick={() => setIsMenuOpen(false)} to="/whatsapp" className={`flex items-center space-x-3 p-3.5 rounded-2xl font-black text-xs uppercase tracking-wider ${isActive('/whatsapp') ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white' : 'text-zinc-300 hover:bg-[#1a1f29]'}`}>
-                 <span className="text-emerald-400">💬</span>
-                 <span>WHATSAPP</span>
-              </Link>
-              {(user?.rol === 'admin' || user?.rol === 'super_admin') && (
+              {hasModulo('whatsapp_bot') && (
+                <Link onClick={() => setIsMenuOpen(false)} to="/whatsapp" className={`flex items-center space-x-3 p-3.5 rounded-2xl font-black text-xs uppercase tracking-wider ${isActive('/whatsapp') ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white' : 'text-zinc-300 hover:bg-[#1a1f29]'}`}>
+                   <span className="text-emerald-400">💬</span>
+                   <span>WHATSAPP</span>
+                </Link>
+              )}
+              {(user?.rol === 'admin' || user?.rol === 'super_admin') && hasModulo('facturacion_electronica') && (
+                <Link onClick={() => setIsMenuOpen(false)} to="/facturacion" className={`flex items-center space-x-3 p-3.5 rounded-2xl font-black text-xs uppercase tracking-wider ${isActive('/facturacion') ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white' : 'text-zinc-300 hover:bg-[#1a1f29]'}`}>
+                   <span className="text-cyan-400">🏛️</span>
+                   <span>FACTURACIÓN</span>
+                </Link>
+              )}
+              {(user?.rol === 'admin' || user?.rol === 'super_admin') && hasModulo('usuarios_roles') && (
                 <Link onClick={() => setIsMenuOpen(false)} to="/usuarios" className={`flex items-center space-x-3 p-3.5 rounded-2xl font-black text-xs uppercase tracking-wider ${isActive('/usuarios') ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white' : 'text-zinc-300 hover:bg-[#1a1f29]'}`}>
                    <span>👥</span>
                    <span>USUARIOS</span>

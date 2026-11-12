@@ -139,6 +139,7 @@ class AuthController extends Controller
                     'slug' => $usuario->negocio->slug,
                     'estado' => $usuario->negocio->estado,
                     'plan' => $usuario->negocio->suscripcionActiva ? $usuario->negocio->suscripcionActiva->plan->nombre : null,
+                    'modulos' => $usuario->negocio->getModulosHabilitados(),
                 ] : null,
             ]
         ]);
@@ -232,6 +233,7 @@ class AuthController extends Controller
                 'slug' => $usuario->negocio->slug,
                 'estado' => $usuario->negocio->estado,
                 'plan' => $usuario->negocio->suscripcionActiva ? $usuario->negocio->suscripcionActiva->plan->nombre : null,
+                'modulos' => $usuario->negocio->getModulosHabilitados(),
             ] : null,
         ]);
     }

@@ -98,4 +98,36 @@ class Negocio extends Model
     {
         return $this->estado === 'activo';
     }
+
+    /**
+     * Obtiene los códigos de todos los módulos habilitados para este restaurante
+     * combinando los del plan contratado y los overrides/addons personalizados.
+     */
+    public function getModulosHabilitados(): array
+    {
+        $suscripcion = $this->suscripcionActiva;
+        $planModulos = [];
+        if ($suscripcion && $suscripcion->plan_id) {
+            $planModulos = \Illuminate\Support\Facades\DB::table('plan_funcionalidad')
+                ->join('funcionalidades', 'plan_funcionalidad.funcionalidad_id', '=', 'funcionalidades.id')
+                ->where('plan_funcionalidad.plan_id', $suscripcion->plan_id)
+                ->where('funcionalidades.activo', 1)
+                ->pluck('funcionalidades.codigo')
+                ->toArray();
+        }
+
+        $overrides = \Illuminate\Support\Facades\DB::table('negocio_funcionalidad')
+            ->join('funcionalidades', 'negocio_funcionalidad.funcionalidad_id', '=', 'funcionalidades.id')
+            ->where('negocio_funcionalidad.negocio_id', $this->id)
+            ->where('funcionalidades.activo', 1)
+            ->select('funcionalidades.codigo', 'negocio_funcionalidad.habilitado')
+            ->get();
+
+        $modulosMap = array_fill_keys($planModulos, true);
+        foreach ($overrides as $ov) {
+            $modulosMap[$ov->codigo] = (bool) $ov->habilitado;
+        }
+
+        return array_keys(array_filter($modulosMap));
+    }
 }

@@ -1475,11 +1475,44 @@ class SuperAdminController extends Controller
     public function toggleModuloNegocio(Request $request, $negocioId, $funcionalidadId)
     {
         $negocio = Negocio::findOrFail($negocioId);
-        $habilitado = $request->input('habilitado', true);
+        $func = Funcionalidad::findOrFail($funcionalidadId);
 
-        $negocio->funcionalidades()->syncWithoutDetaching([
-            $funcionalidadId => ['habilitado' => $habilitado]
-        ]);
+        // Si se envió explícitamente 'habilitado', usarlo; si no, alternar al estado opuesto actual
+        if ($request->has('habilitado')) {
+            $habilitado = $request->boolean('habilitado');
+        } else {
+            $override = DB::table('negocio_funcionalidad')
+                ->where('negocio_id', $negocioId)
+                ->where('funcionalidad_id', $funcionalidadId)
+                ->first();
+
+            if ($override !== null) {
+                $habilitado = !((bool)$override->habilitado);
+            } else {
+                $suscripcion = Suscripcion::where('negocio_id', $negocioId)
+                    ->whereIn('estado', ['activa', 'gracia', 'pendiente'])
+                    ->latest()
+                    ->first();
+                $enPlan = false;
+                if ($suscripcion && $suscripcion->plan_id) {
+                    $enPlan = DB::table('plan_funcionalidad')
+                        ->where('plan_id', $suscripcion->plan_id)
+                        ->where('funcionalidad_id', $funcionalidadId)
+                        ->exists();
+                }
+                $habilitado = !$enPlan;
+            }
+        }
+
+        DB::table('negocio_funcionalidad')->updateOrInsert(
+            [
+                'negocio_id' => $negocioId,
+                'funcionalidad_id' => $funcionalidadId,
+            ],
+            [
+                'habilitado' => $habilitado ? 1 : 0,
+            ]
+        );
 
         AuditoriaService::registrar(
             'override_modulo',
@@ -1487,13 +1520,41 @@ class SuperAdminController extends Controller
             $funcionalidadId,
             $negocioId,
             null,
-            ['funcionalidad_id' => $funcionalidadId, 'habilitado' => $habilitado],
-            'Activación/desactivación personalizada de módulo para el restaurante'
+            ['funcionalidad_id' => $funcionalidadId, 'funcionalidad' => $func->nombre, 'habilitado' => $habilitado],
+            ($habilitado ? 'Habilitación' : 'Desactivación') . " de módulo '{$func->nombre}' para el restaurante {$negocio->nombre_comercial}"
         );
 
         return response()->json([
             'success' => true,
-            'message' => 'Configuración de módulo actualizada para el restaurante.'
+            'habilitado' => (bool)$habilitado,
+            'modulo' => $func->nombre,
+            'message' => "Módulo '{$func->nombre}' " . ($habilitado ? 'habilitado' : 'deshabilitado') . " para {$negocio->nombre_comercial}."
+        ]);
+    }
+
+    public function resetModuloNegocio($negocioId, $funcionalidadId)
+    {
+        $negocio = Negocio::findOrFail($negocioId);
+        $func = Funcionalidad::findOrFail($funcionalidadId);
+
+        DB::table('negocio_funcionalidad')
+            ->where('negocio_id', $negocioId)
+            ->where('funcionalidad_id', $funcionalidadId)
+            ->delete();
+
+        AuditoriaService::registrar(
+            'reset_modulo',
+            'negocio_funcionalidad',
+            $funcionalidadId,
+            $negocioId,
+            null,
+            null,
+            "Restablecimiento de módulo '{$func->nombre}' al plan base en {$negocio->nombre_comercial}"
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => "Módulo '{$func->nombre}' restablecido a la configuración por defecto del plan contratado."
         ]);
     }
 

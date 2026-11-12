@@ -146,6 +146,11 @@ export const toggleModuloNegocio = async (negocioId, funcionalidadId, habilitado
   return response.data;
 };
 
+export const resetModuloNegocio = async (negocioId, funcionalidadId) => {
+  const response = await api.delete(`/super-admin/negocios/${negocioId}/modulos/${funcionalidadId}/reset`);
+  return response.data;
+};
+
 // ─── 7. USUARIOS DE LA PLATAFORMA ────────────────────────────────────────────
 export const getUsuarios = async (params = {}) => {
   const response = await api.get('/super-admin/usuarios', { params });

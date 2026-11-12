@@ -44,6 +44,7 @@ import {
   getSystemHealth,
   getBackups,
   generarBackup,
+  resetModuloNegocio,
 } from '../../services/superAdminService';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -182,6 +183,24 @@ export default function SuperAdminDashboard() {
   const [showModalResetPass, setShowModalResetPass] = useState(false);
   const [usuarioParaReset, setUsuarioParaReset] = useState(null);
   const [nuevoPasswordParaUsuario, setNuevoPasswordParaUsuario] = useState('');
+
+  // Estados interactivos para Ficha de Restaurante (Módulos & Configuración)
+  const [togglingModuloId, setTogglingModuloId] = useState(null);
+  const [filtroModulosFicha, setFiltroModulosFicha] = useState('todos'); // 'todos' | 'habilitados' | 'inactivos' | 'plan' | 'addons'
+  const [busquedaModuloFicha, setBusquedaModuloFicha] = useState('');
+  const [subTabConfigFicha, setSubTabConfigFicha] = useState('billing'); // 'billing' | 'comercial' | 'whatsapp'
+  const [guardandoConfigNegocio, setGuardandoConfigNegocio] = useState(false);
+  const [formConfigNegocio, setFormConfigNegocio] = useState({
+    nombre_comercial: '',
+    razon_social: '',
+    nit: '',
+    email: '',
+    telefono: '',
+    direccion: '',
+    ciudad: '',
+    departamento: '',
+    estado: 'activo',
+  });
 
   // Modales Suscripciones & Pagos
   const [showModalCambiarPlan, setShowModalCambiarPlan] = useState(false);
@@ -401,6 +420,19 @@ export default function SuperAdminDashboard() {
     try {
       const res = await getNegocioFicha(id);
       setNegocioSeleccionado(res);
+      if (res?.negocio) {
+        setFormConfigNegocio({
+          nombre_comercial: res.negocio.nombre_comercial || '',
+          razon_social: res.negocio.razon_social || '',
+          nit: res.negocio.nit || '',
+          email: res.negocio.email || '',
+          telefono: res.negocio.telefono || '',
+          direccion: res.negocio.direccion || '',
+          ciudad: res.negocio.ciudad || '',
+          departamento: res.negocio.departamento || '',
+          estado: res.negocio.estado || 'activo',
+        });
+      }
       setShowModalDetalleNegocio(true);
     } catch (err) {
       toast.error('Error al obtener ficha del restaurante');
@@ -446,16 +478,64 @@ export default function SuperAdminDashboard() {
     }
   };
 
-  // Toggle Módulo dentro de la Ficha Integral del Restaurante
-  const handleToggleModuloEnFicha = async (funcId) => {
+  // Toggle Módulo dentro de la Ficha Integral del Restaurante (Instantáneo & Confiable)
+  const handleToggleModuloEnFicha = async (funcId, nuevoEstado, funcNombre) => {
     if (!negocioSeleccionado?.negocio?.id) return;
     try {
-      await toggleModuloNegocio(negocioSeleccionado.negocio.id, funcId);
-      toast.success('Módulo actualizado en el restaurante');
-      const res = await getNegocioFicha(negocioSeleccionado.negocio.id);
-      setNegocioSeleccionado(res);
+      setTogglingModuloId(funcId);
+      // Actualización optimista inmediata en la UI
+      setNegocioSeleccionado(prev => {
+        if (!prev || !prev.modulos) return prev;
+        return {
+          ...prev,
+          modulos: prev.modulos.map(m => m.id === funcId ? { ...m, habilitado: nuevoEstado, tiene_override: true } : m)
+        };
+      });
+
+      const res = await toggleModuloNegocio(negocioSeleccionado.negocio.id, funcId, nuevoEstado);
+      toast.success(res.message || `Módulo "${funcNombre}" ${nuevoEstado ? 'habilitado' : 'deshabilitado'}`);
+      const fichaActualizada = await getNegocioFicha(negocioSeleccionado.negocio.id);
+      setNegocioSeleccionado(fichaActualizada);
     } catch (err) {
-      toast.error('Error al actualizar módulo');
+      toast.error(err.response?.data?.message || 'Error al actualizar acceso del módulo');
+      const fichaActualizada = await getNegocioFicha(negocioSeleccionado.negocio.id);
+      setNegocioSeleccionado(fichaActualizada);
+    } finally {
+      setTogglingModuloId(null);
+    }
+  };
+
+  // Restablecer Módulo a la configuración por defecto del Plan
+  const handleResetModuloEnFicha = async (funcId, funcNombre) => {
+    if (!negocioSeleccionado?.negocio?.id) return;
+    try {
+      setTogglingModuloId(funcId);
+      const res = await resetModuloNegocio(negocioSeleccionado.negocio.id, funcId);
+      toast.success(res.message || `Módulo "${funcNombre}" restablecido al plan base`);
+      const fichaActualizada = await getNegocioFicha(negocioSeleccionado.negocio.id);
+      setNegocioSeleccionado(fichaActualizada);
+    } catch (err) {
+      toast.error('Error al restablecer módulo al plan');
+    } finally {
+      setTogglingModuloId(null);
+    }
+  };
+
+  // Guardar Configuración Comercial del Restaurante (Ficha - Pestaña Configuración)
+  const handleGuardarConfigComercial = async (e) => {
+    e.preventDefault();
+    if (!negocioSeleccionado?.negocio?.id) return;
+    try {
+      setGuardandoConfigNegocio(true);
+      toast.loading('Guardando cambios comerciales...', { id: 'cfg_com' });
+      await updateNegocio(negocioSeleccionado.negocio.id, formConfigNegocio);
+      toast.success('Perfil comercial actualizado exitosamente', { id: 'cfg_com' });
+      const fichaActualizada = await getNegocioFicha(negocioSeleccionado.negocio.id);
+      setNegocioSeleccionado(fichaActualizada);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Error al guardar configuración comercial', { id: 'cfg_com' });
+    } finally {
+      setGuardandoConfigNegocio(false);
     }
   };
 
@@ -893,6 +973,32 @@ export default function SuperAdminDashboard() {
 
   const kpis = dashboardData?.kpis || {};
   const graficos = dashboardData?.graficos || {};
+
+  const getModuloIcon = (codigo) => {
+    switch (codigo) {
+      case 'pos_ventas': return '🛒';
+      case 'caja_cierres': return '💵';
+      case 'caja_registradora': return '💰';
+      case 'inventario_basico': return '📦';
+      case 'inventario_avanzado': return '📊';
+      case 'inventario': return '📋';
+      case 'reportes_basicos': return '📈';
+      case 'reportes_avanzados': return '📉';
+      case 'usuarios_roles': return '👥';
+      case 'empleados': return '👔';
+      case 'backup_export': return '💾';
+      case 'compras': return '🛍️';
+      case 'proveedores': return '🚚';
+      case 'clientes': return '🤝';
+      case 'whatsapp_bot': return '💬';
+      case 'delivery': return '🛵';
+      case 'mesas': return '🍽️';
+      case 'comandas_cocina': return '🧑‍🍳';
+      case 'sucursales': return '🏢';
+      case 'facturacion_electronica': return '🏛️';
+      default: return '🧩';
+    }
+  };
 
   return (
     <div className="flex h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
@@ -3732,29 +3838,50 @@ export default function SuperAdminDashboard() {
           4. MODAL: DETALLE COMPLETO DE RESTAURANTE
       ───────────────────────────────────────────────────────────── */}
       {showModalDetalleNegocio && negocioSeleccionado && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 z-50 animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-6xl w-full max-h-[94vh] flex flex-col shadow-2xl overflow-hidden">
             
             {/* Header del modal */}
-            <div className="flex justify-between items-center border-b border-slate-800 px-7 py-5 shrink-0">
-              <div>
-                <h3 className="text-xl font-black text-white">{negocioSeleccionado.negocio.nombre_comercial}</h3>
-                <p className="text-xs text-orange-400 font-mono">
-                  {negocioSeleccionado.negocio.slug}.mipos.com • Estado: <strong className="uppercase">{negocioSeleccionado.negocio.estado}</strong>
-                </p>
+            <div className="flex justify-between items-center border-b border-slate-800 px-7 py-4.5 bg-slate-950/80 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-500 p-[2px] shadow-lg shadow-orange-500/20 shrink-0">
+                  <div className="w-full h-full rounded-2xl bg-slate-900 flex items-center justify-center text-xl">
+                    🏢
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xl font-black text-white">{negocioSeleccionado.negocio.nombre_comercial}</h3>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                      negocioSeleccionado.negocio.estado === 'activo'
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                        : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                    }`}>
+                      {negocioSeleccionado.negocio.estado}
+                    </span>
+                  </div>
+                  <p className="text-xs text-orange-400 font-mono mt-0.5">
+                    {negocioSeleccionado.negocio.slug}.mipos.com • Plan: <strong className="text-slate-200">{negocioSeleccionado.suscripcion?.activa?.plan?.nombre || 'Sin Plan'}</strong>
+                  </p>
+                </div>
               </div>
-              <button onClick={() => { setShowModalDetalleNegocio(false); setModalDetalleTab('general'); }} className="text-slate-400 hover:text-white text-xl">✕</button>
+              <button
+                onClick={() => { setShowModalDetalleNegocio(false); setModalDetalleTab('general'); }}
+                className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-lg transition-all cursor-pointer"
+              >
+                ✕
+              </button>
             </div>
 
-            {/* Sub-navegación del modal: Las 10 Pestañas Oficiales */}
-            <div className="flex gap-1 px-5 pt-3 pb-0 shrink-0 border-b border-slate-800/60 overflow-x-auto no-scrollbar">
+            {/* Sub-navegación del modal: Las 10 Pestañas Oficiales Estilo Ejecutivo */}
+            <div className="sticky top-0 z-20 bg-slate-950/95 backdrop-blur-md border-b border-slate-800 px-6 py-3 flex items-center gap-1.5 overflow-x-auto custom-scrollbar shrink-0">
               {[
                 { id: 'general',      label: 'General',       icon: '📋' },
                 { id: 'suscripcion',  label: 'Suscripción',   icon: '⏱️' },
                 { id: 'pagos',        label: 'Pagos SaaS',    icon: '💳' },
                 { id: 'usuarios',     label: 'Usuarios',      icon: '👥' },
                 { id: 'dominios',     label: 'Dominios & SSL',icon: '🌐' },
-                { id: 'modulos',      label: 'Módulos',       icon: '🧩' },
+                { id: 'modulos',      label: 'Módulos',       icon: '🧩', badge: negocioSeleccionado.modulos?.filter(m => m.habilitado)?.length },
                 { id: 'sucursales',   label: 'Sucursales',    icon: '🏢' },
                 { id: 'actividad',    label: 'Actividad',     icon: '📜' },
                 { id: 'soporte',      label: 'Soporte',       icon: '🎧' },
@@ -3763,13 +3890,23 @@ export default function SuperAdminDashboard() {
                 <button
                   key={tab.id}
                   onClick={() => setModalDetalleTab(tab.id)}
-                  className={`px-3 py-2 text-xs font-bold rounded-t-lg transition-all flex items-center gap-1.5 border-b-2 shrink-0 cursor-pointer ${
+                  className={`px-3.5 py-2 text-xs font-black rounded-xl transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
                     modalDetalleTab === tab.id
-                      ? 'text-orange-400 border-orange-500 bg-orange-500/10'
-                      : 'text-slate-400 border-transparent hover:text-white hover:bg-slate-800/40'
+                      ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/30 scale-[1.02]'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
                   }`}
                 >
-                  <span>{tab.icon}</span> {tab.label}
+                  <span className="text-sm">{tab.icon}</span>
+                  <span>{tab.label}</span>
+                  {tab.badge !== undefined && (
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                      modalDetalleTab === tab.id
+                        ? 'bg-black/30 text-white'
+                        : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    }`}>
+                      {tab.badge}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -4038,39 +4175,195 @@ export default function SuperAdminDashboard() {
                 </div>
               )}
 
-              {/* ── TAB 6: MÓDULOS Y ADDONS ── */}
+              {/* ── TAB 6: MÓDULOS Y ADDONS INTERACTIVOS ── */}
               {modalDetalleTab === 'modulos' && (
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h4 className="text-xs font-black uppercase text-slate-400">Catálogo de 14 Módulos y Addons Contratados</h4>
-                    <span className="text-[11px] text-orange-400 font-bold">Autorización directa en Backend</span>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {(negocioSeleccionado.modulos || []).map(m => (
-                      <div key={m.id} className="p-3.5 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between gap-3">
-                        <div>
-                          <div className="font-bold text-white text-xs flex items-center gap-2">
-                            <span>{m.nombre}</span>
-                            <span className={`text-[9px] px-1.5 py-0.2 rounded font-black uppercase ${
-                              m.incluido_en_plan ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'
-                            }`}>
-                              {m.incluido_en_plan ? 'Plan' : 'Addon'}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">{m.descripcion}</p>
+                <div className="space-y-6">
+                  {/* Header con estadísticas en vivo */}
+                  <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">🧩</span>
+                        <h4 className="text-sm font-black uppercase text-white tracking-wider">
+                          Control de Acceso a Módulos & Addons
+                        </h4>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                          Autorización directa en Backend
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Restaurante: <strong className="text-white">{negocioSeleccionado.negocio.nombre_comercial}</strong> • Plan Base:{' '}
+                        <strong className="text-orange-400">{negocioSeleccionado.suscripcion?.activa?.plan?.nombre || 'Personalizado'}</strong>
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <div className="text-xs font-bold text-slate-400">Total Habilitados</div>
+                        <div className="text-lg font-black text-emerald-400">
+                          {negocioSeleccionado.modulos?.filter(m => m.habilitado)?.length || 0} / {negocioSeleccionado.modulos?.length || 0}
                         </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Barra de Filtros y Búsqueda */}
+                  <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+                    {/* Pills de categorías */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { id: 'todos', label: 'Todos', count: negocioSeleccionado.modulos?.length },
+                        { id: 'habilitados', label: 'Habilitados', count: negocioSeleccionado.modulos?.filter(m => m.habilitado)?.length },
+                        { id: 'inactivos', label: 'Inactivos', count: negocioSeleccionado.modulos?.filter(m => !m.habilitado)?.length },
+                        { id: 'plan', label: 'Del Plan Base', count: negocioSeleccionado.modulos?.filter(m => m.incluido_en_plan)?.length },
+                        { id: 'addons', label: 'Addons Extras', count: negocioSeleccionado.modulos?.filter(m => !m.incluido_en_plan)?.length },
+                      ].map(f => (
                         <button
-                          onClick={() => handleToggleModuloEnFicha(m.id)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase transition-all shrink-0 cursor-pointer ${
-                            m.habilitado
-                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500 hover:text-white'
-                              : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+                          key={f.id}
+                          type="button"
+                          onClick={() => setFiltroModulosFicha(f.id)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                            filtroModulosFicha === f.id
+                              ? 'bg-orange-500 text-white shadow-md shadow-orange-500/30'
+                              : 'bg-slate-950 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
                           }`}
                         >
-                          {m.habilitado ? 'Habilitado' : 'Inactivo'}
+                          <span>{f.label}</span>
+                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                            filtroModulosFicha === f.id ? 'bg-black/30 text-white' : 'bg-slate-900 text-slate-400'
+                          }`}>
+                            {f.count || 0}
+                          </span>
                         </button>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
+
+                    {/* Input de Búsqueda rápida */}
+                    <div className="relative w-full sm:w-64">
+                      <input
+                        type="text"
+                        placeholder="Buscar módulo..."
+                        value={busquedaModuloFicha}
+                        onChange={(e) => setBusquedaModuloFicha(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-1.5 pl-8 text-xs text-white placeholder-slate-500 focus:border-orange-500 focus:outline-none"
+                      />
+                      <span className="absolute left-2.5 top-2 text-xs text-slate-500">🔍</span>
+                      {busquedaModuloFicha && (
+                        <button
+                          onClick={() => setBusquedaModuloFicha('')}
+                          className="absolute right-2.5 top-1.5 text-xs text-slate-400 hover:text-white"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Grid de Módulos con Switches */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    {(negocioSeleccionado.modulos || [])
+                      .filter(m => {
+                        if (filtroModulosFicha === 'habilitados') return m.habilitado;
+                        if (filtroModulosFicha === 'inactivos') return !m.habilitado;
+                        if (filtroModulosFicha === 'plan') return m.incluido_en_plan;
+                        if (filtroModulosFicha === 'addons') return !m.incluido_en_plan;
+                        return true;
+                      })
+                      .filter(m => {
+                        if (!busquedaModuloFicha) return true;
+                        const q = busquedaModuloFicha.toLowerCase();
+                        return (m.nombre || '').toLowerCase().includes(q) ||
+                               (m.codigo || '').toLowerCase().includes(q) ||
+                               (m.descripcion || '').toLowerCase().includes(q);
+                      })
+                      .map(m => {
+                        const isToggling = togglingModuloId === m.id;
+                        return (
+                          <div
+                            key={m.id}
+                            className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 shadow-sm ${
+                              m.habilitado
+                                ? 'bg-slate-950/90 border-slate-800 hover:border-emerald-500/40'
+                                : 'bg-slate-950/50 border-slate-900 opacity-80 hover:opacity-100 hover:border-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-3">
+                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0 ${
+                                  m.habilitado ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-slate-900 border border-slate-800'
+                                }`}>
+                                  {getModuloIcon(m.codigo)}
+                                </div>
+                                <div>
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <h5 className="font-black text-white text-xs">{m.nombre}</h5>
+                                    <span className={`text-[9px] px-1.5 py-0.2 rounded font-black uppercase ${
+                                      m.incluido_en_plan
+                                        ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
+                                        : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                                    }`}>
+                                      {m.incluido_en_plan ? 'Plan Base' : 'Addon'}
+                                    </span>
+                                    {m.tiene_override && (
+                                      <span className="text-[9px] px-1.5 py-0.2 rounded font-black uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30" title="Configuración personalizada para este restaurante">
+                                        Personalizado
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[11px] text-slate-400 mt-1 leading-snug line-clamp-2">
+                                    {m.descripcion}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Footer de la tarjeta con Switch Toggle interactivo */}
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-900 text-xs">
+                              <div className="flex items-center gap-2">
+                                {m.tiene_override && (
+                                  <button
+                                    type="button"
+                                    disabled={isToggling}
+                                    onClick={() => handleResetModuloEnFicha(m.id, m.nombre)}
+                                    className="text-[10px] font-bold text-amber-400/80 hover:text-amber-300 hover:underline flex items-center gap-1 cursor-pointer transition-colors"
+                                    title="Quitar excepción y regresar a la asignación original del plan"
+                                  >
+                                    <span>↺</span>
+                                    <span>Restablecer al plan</span>
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2.5">
+                                <span className={`text-[10px] font-black uppercase tracking-wider ${
+                                  m.habilitado ? 'text-emerald-400' : 'text-slate-500'
+                                }`}>
+                                  {isToggling ? 'Actualizando...' : m.habilitado ? 'Habilitado' : 'Inactivo'}
+                                </span>
+
+                                {/* Switch Toggle Slider */}
+                                <button
+                                  type="button"
+                                  disabled={isToggling}
+                                  onClick={() => handleToggleModuloEnFicha(m.id, !m.habilitado, m.nombre)}
+                                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                    m.habilitado ? 'bg-emerald-500 shadow-md shadow-emerald-500/30' : 'bg-slate-800'
+                                  } ${isToggling ? 'opacity-50 cursor-wait' : ''}`}
+                                  role="switch"
+                                  aria-checked={m.habilitado}
+                                  title={`Haz clic para ${m.habilitado ? 'desactivar' : 'activar'} este módulo`}
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                                      m.habilitado ? 'translate-x-5' : 'translate-x-0'
+                                    }`}
+                                  />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                   </div>
                 </div>
               )}
@@ -4167,13 +4460,225 @@ export default function SuperAdminDashboard() {
                 </div>
               )}
 
-              {/* ── TAB 10: CONFIGURACIÓN & FACTURACIÓN ── */}
+              {/* ── TAB 10: CONFIGURACIÓN INTEGRAL (SUB-MENÚ EJECUTIVO) ── */}
               {modalDetalleTab === 'configuracion' && (
                 <div className="space-y-6">
-                  <BillingConfigPanel
-                    negocioId={negocioSeleccionado.negocio.id}
-                    negocioNombre={negocioSeleccionado.negocio.nombre_comercial}
-                  />
+                  {/* Sub-menú de navegación de Configuración */}
+                  <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3">
+                    {[
+                      { id: 'billing', label: 'Comprobantes & Facturación SIN', icon: '🧾' },
+                      { id: 'comercial', label: 'Perfil Comercial & Sucursal', icon: '🏢' },
+                      { id: 'whatsapp', label: 'WhatsApp Bot & Alertas', icon: '💬' },
+                    ].map(st => (
+                      <button
+                        key={st.id}
+                        type="button"
+                        onClick={() => setSubTabConfigFicha(st.id)}
+                        className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                          subTabConfigFicha === st.id
+                            ? 'bg-orange-500/20 text-orange-400 border border-orange-500/40 shadow-sm'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        <span>{st.icon}</span>
+                        <span>{st.label}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Subsección 1: Facturación y Comprobantes SIN */}
+                  {subTabConfigFicha === 'billing' && (
+                    <BillingConfigPanel
+                      negocioId={negocioSeleccionado.negocio.id}
+                      negocioNombre={negocioSeleccionado.negocio.nombre_comercial}
+                    />
+                  )}
+
+                  {/* Subsección 2: Perfil Comercial y Datos del Negocio */}
+                  {subTabConfigFicha === 'comercial' && (
+                    <form onSubmit={handleGuardarConfigComercial} className="bg-slate-950 p-6 rounded-2xl border border-slate-800 space-y-5">
+                      <div className="flex justify-between items-center border-b border-slate-800/80 pb-3">
+                        <div>
+                          <h4 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
+                            <span>🏢</span> Datos Comerciales y Fiscales del Restaurante
+                          </h4>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            Modifica la información legal, dirección y estado operativo de este restaurante.
+                          </p>
+                        </div>
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-black uppercase ${
+                          formConfigNegocio.estado === 'activo'
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                            : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                        }`}>
+                          {formConfigNegocio.estado}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Nombre Comercial *</label>
+                          <input
+                            type="text"
+                            value={formConfigNegocio.nombre_comercial}
+                            onChange={(e) => setFormConfigNegocio({ ...formConfigNegocio, nombre_comercial: e.target.value })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-white text-xs focus:border-orange-500 focus:outline-none"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Razón Social</label>
+                          <input
+                            type="text"
+                            value={formConfigNegocio.razon_social}
+                            onChange={(e) => setFormConfigNegocio({ ...formConfigNegocio, razon_social: e.target.value })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-white text-xs focus:border-orange-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">NIT / CI Fiscal</label>
+                          <input
+                            type="text"
+                            value={formConfigNegocio.nit}
+                            onChange={(e) => setFormConfigNegocio({ ...formConfigNegocio, nit: e.target.value })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-white text-xs focus:border-orange-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Email de Contacto *</label>
+                          <input
+                            type="email"
+                            value={formConfigNegocio.email}
+                            onChange={(e) => setFormConfigNegocio({ ...formConfigNegocio, email: e.target.value })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-white text-xs focus:border-orange-500 focus:outline-none"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Teléfono / Celular</label>
+                          <input
+                            type="text"
+                            value={formConfigNegocio.telefono}
+                            onChange={(e) => setFormConfigNegocio({ ...formConfigNegocio, telefono: e.target.value })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-white text-xs focus:border-orange-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Ciudad *</label>
+                          <input
+                            type="text"
+                            value={formConfigNegocio.ciudad}
+                            onChange={(e) => setFormConfigNegocio({ ...formConfigNegocio, ciudad: e.target.value })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-white text-xs focus:border-orange-500 focus:outline-none"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Departamento</label>
+                          <input
+                            type="text"
+                            value={formConfigNegocio.departamento}
+                            onChange={(e) => setFormConfigNegocio({ ...formConfigNegocio, departamento: e.target.value })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-white text-xs focus:border-orange-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Dirección Física</label>
+                          <input
+                            type="text"
+                            value={formConfigNegocio.direccion}
+                            onChange={(e) => setFormConfigNegocio({ ...formConfigNegocio, direccion: e.target.value })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-white text-xs focus:border-orange-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Estado Operativo</label>
+                          <select
+                            value={formConfigNegocio.estado}
+                            onChange={(e) => setFormConfigNegocio({ ...formConfigNegocio, estado: e.target.value })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-white text-xs focus:border-orange-500 focus:outline-none"
+                          >
+                            <option value="activo">Activo (Operativo)</option>
+                            <option value="suspendido">Suspendido (Acceso bloqueado)</option>
+                            <option value="pendiente">Pendiente</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end pt-3 border-t border-slate-800">
+                        <button
+                          type="submit"
+                          disabled={guardandoConfigNegocio}
+                          className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:brightness-110 disabled:opacity-50 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-orange-500/30 cursor-pointer"
+                        >
+                          <span>{guardandoConfigNegocio ? '⏳' : '💾'}</span>
+                          <span>{guardandoConfigNegocio ? 'Guardando...' : 'Guardar Cambios Comerciales'}</span>
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* Subsección 3: WhatsApp Bot y Alertas */}
+                  {subTabConfigFicha === 'whatsapp' && (
+                    <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 space-y-5">
+                      <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
+                        <span className="text-2xl">💬</span>
+                        <div>
+                          <h4 className="text-sm font-black text-white uppercase tracking-wider">
+                            Servicio de WhatsApp Bot & Notificaciones
+                          </h4>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            Envío automático de resúmenes de venta diaria, PDF de caja y alertas por WhatsApp.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="p-4 bg-slate-900 rounded-xl border border-slate-800">
+                          <span className="text-[10px] text-slate-500 uppercase font-bold block">Teléfono Registrado</span>
+                          <span className="text-base font-black text-white mt-1 block">
+                            {negocioSeleccionado.negocio.telefono || 'Sin teléfono configurado'}
+                          </span>
+                          <span className="text-[11px] text-slate-400 mt-1 block">
+                            Número al que se envían los cierres de caja y alertas del negocio.
+                          </span>
+                        </div>
+
+                        <div className="p-4 bg-slate-900 rounded-xl border border-slate-800">
+                          <span className="text-[10px] text-slate-500 uppercase font-bold block">Estado Módulo WhatsApp</span>
+                          <div className="mt-1 flex items-center gap-2">
+                            {negocioSeleccionado.modulos?.find(m => m.codigo === 'whatsapp_bot')?.habilitado ? (
+                              <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full text-xs font-black uppercase">
+                                ✓ Módulo Activo
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-1 bg-red-500/20 text-red-400 border border-red-500/30 rounded-full text-xs font-black uppercase">
+                                ✕ Módulo Desactivado
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[11px] text-slate-400 mt-2 block">
+                            Para activar o desactivar este servicio para este cliente, hazlo desde la pestaña{' '}
+                            <button
+                              type="button"
+                              onClick={() => setModalDetalleTab('modulos')}
+                              className="text-orange-400 font-bold hover:underline"
+                            >
+                              Módulos
+                            </button>.
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
