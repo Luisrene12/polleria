@@ -157,10 +157,16 @@ class VentaController extends Controller
         // 6. Ejecutar transacción atómica en base de datos
         DB::beginTransaction();
         try {
+            // Calcular correlativo diario/turno de ticket dentro de la caja abierta actual
+            $numeroTicket = Venta::where('negocio_id', $negocioId)
+                ->where('fecha', '>=', $caja->fecha_apertura)
+                ->count() + 1;
+
             // A. Cabecera de venta
             $venta = Venta::create([
                 'negocio_id'     => $negocioId,
                 'usuario_id'     => $usuarioId,
+                'numero_ticket'  => $numeroTicket,
                 'fecha'          => now(),
                 'total'          => $totalCalculado,
                 'cliente'        => $cliente,
@@ -205,9 +211,10 @@ class VentaController extends Controller
             DB::commit();
 
             $responseData = [
-                'ventaId' => $venta->id,
-                'total'   => $totalCalculado,
-                'comprobante' => [
+                'ventaId'       => $venta->id,
+                'numero_ticket' => $numeroTicket,
+                'total'         => $totalCalculado,
+                'comprobante'   => [
                     'id'                 => $comprobante->id,
                     'tipo_comprobante'   => $tipoComprobante,
                     'numero_comprobante' => $numeroComprobante,

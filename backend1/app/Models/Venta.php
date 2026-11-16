@@ -17,6 +17,7 @@ class Venta extends Model
     protected $fillable = [
         'negocio_id',
         'usuario_id',
+        'numero_ticket',
         'fecha',
         'total',
         'cliente',
@@ -27,6 +28,7 @@ class Venta extends Model
 
     protected $casts = [
         'negocio_id' => 'integer',
+        'numero_ticket' => 'integer',
         'total' => 'float',
         'monto_efectivo' => 'float',
         'monto_tarjeta' => 'float',

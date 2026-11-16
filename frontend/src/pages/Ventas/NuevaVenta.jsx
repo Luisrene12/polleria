@@ -42,6 +42,8 @@ export default function NuevaVenta() {
   const [pagaCon, setPagaCon] = useState('');
   const [procesandoVenta, setProcesandoVenta] = useState(false);
   const procesandoRef = useRef(false);
+  const [numeroTicketActual, setNumeroTicketActual] = useState(1);
+  const ticketNumeroRef = useRef(1);
   
   // Estados para control de caja registradora
   const [caja, setCaja] = useState(null);
@@ -126,9 +128,14 @@ export default function NuevaVenta() {
       if (cajaData && cajaData.estado === 'abierto') {
         setCaja(cajaData);
         setShowAbrirCajaModal(false);
+        const sigTicket = cajaData.siguiente_ticket || 1;
+        setNumeroTicketActual(sigTicket);
+        ticketNumeroRef.current = sigTicket;
       } else {
         setCaja(null);
         setShowAbrirCajaModal(true);
+        setNumeroTicketActual(1);
+        ticketNumeroRef.current = 1;
       }
     } catch (error) {
       toast.error('Error al cargar datos del sistema');
@@ -149,6 +156,9 @@ export default function NuevaVenta() {
       setShowAbrirCajaModal(false);
       const cajaData = await getCajaEstado();
       setCaja(cajaData);
+      const sigTicket = cajaData?.siguiente_ticket || 1;
+      setNumeroTicketActual(sigTicket);
+      ticketNumeroRef.current = sigTicket;
     } catch (error) {
       toast.error(error.response?.data?.message || 'Error al abrir la caja');
     } finally {
@@ -168,6 +178,8 @@ export default function NuevaVenta() {
       toast.success(`Caja cerrada: Ventas: Bs. ${ventas} | Esperado: Bs. ${esperado} | Real: Bs. ${real} | Dif: Bs. ${diferencia}`);
       setShowCerrarCajaModal(false);
       setCaja(null);
+      setNumeroTicketActual(1);
+      ticketNumeroRef.current = 1;
       setShowAbrirCajaModal(true);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Error al cerrar la caja');
@@ -225,12 +237,29 @@ export default function NuevaVenta() {
         }))
       };
 
-      await registrarVenta(venta);
+      const res = await registrarVenta(venta);
       toast.dismiss(toastId);
       toast.success('¡Venta registrada con éxito!');
 
+      const ticketNum = res.data?.numero_ticket || ticketNumeroRef.current || 1;
+      ticketNumeroRef.current = ticketNum;
+      setNumeroTicketActual(ticketNum);
+
+      // Sincronizar inmediatamente los elementos DOM para impresión
+      document.querySelectorAll('.num-ticket-display').forEach(el => {
+        el.textContent = `#${ticketNum}`;
+      });
+
       // Imprimir solo una vez
       window.print();
+
+      // Preparar el siguiente ticket correlativo para la próxima venta
+      const nextTicket = ticketNum + 1;
+      ticketNumeroRef.current = nextTicket;
+      setNumeroTicketActual(nextTicket);
+      document.querySelectorAll('.num-ticket-display').forEach(el => {
+        el.textContent = `#${nextTicket}`;
+      });
 
       // Limpiar datos
       limpiarCarrito();
@@ -473,10 +502,15 @@ export default function NuevaVenta() {
                        Caja Registradora
                      </h2>
                      {caja ? (
-                       <p className="text-[11px] text-emerald-400 font-extrabold mt-1.5 flex items-center gap-1.5">
-                         <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                         Turno Abierto - Inicial: Bs. {Number(caja.monto_inicial).toFixed(2)}
-                       </p>
+                       <div className="mt-1 flex flex-col gap-0.5">
+                         <p className="text-[11px] text-emerald-400 font-extrabold flex items-center gap-1.5">
+                           <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                           Turno Abierto - Inicial: Bs. {Number(caja.monto_inicial).toFixed(2)}
+                         </p>
+                         <span className="text-[10px] text-amber-400 font-black tracking-wide">
+                           🎟️ Próximo Ticket: <span className="num-ticket-display font-extrabold">#{numeroTicketActual}</span>
+                         </span>
+                       </div>
                      ) : (
                        <p className="text-[11px] text-rose-400 font-extrabold mt-1.5 flex items-center gap-1.5">
                          <span className="w-2 h-2 rounded-full bg-rose-500"></span>
@@ -786,6 +820,12 @@ export default function NuevaVenta() {
             <div className="border-b border-black border-dashed my-2"></div>
           </div>
 
+          {/* NÚMERO DE TICKET DIARIO / TURNO */}
+          <div className="text-center my-2 py-1.5 border-y-2 border-black border-dashed">
+            <span className="text-[9px] font-black uppercase tracking-widest text-gray-700 block">ORDEN / TURNO</span>
+            <span className="text-2xl font-[950] tracking-tight block">TICKET <span className="num-ticket-display">#{numeroTicketActual}</span></span>
+          </div>
+
           <div className="mb-3 text-[10px] space-y-0.5">
             <p className="flex justify-between"><span>FECHA:</span> <span className="font-bold">{new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}</span></p>
             <p className="flex justify-between"><span>CLIENTE:</span> <span className="font-bold uppercase">{clienteNombre}</span></p>
@@ -834,6 +874,9 @@ export default function NuevaVenta() {
         <div id="ticket-cocina" className="p-1">
           <div className="text-center mb-3">
             <h2 className="font-black text-xl uppercase border-2 border-black inline-block px-3 py-0.5">COMANDA COCINA</h2>
+            <div className="my-2 py-1.5 border-y-2 border-black border-dashed">
+              <span className="text-3xl font-[950] tracking-tight block">TICKET <span className="num-ticket-display">#{numeroTicketActual}</span></span>
+            </div>
             <p className="text-xs mt-2 font-bold uppercase">Cliente: {clienteNombre}</p>
             <div className="border-b border-black border-dashed my-2"></div>
           </div>

@@ -72,7 +72,7 @@ h1, h2, h3, h4, h5, h6 {
   }
   
   /* Ocultar elementos innecesarios */
-  nav, .no-print, header, footer, button, .Toaster {
+  nav, .no-print, header, footer, button, .Toaster, svg {
     display: none !important;
     height: 0 !important;
     padding: 0 !important;
@@ -87,6 +87,7 @@ h1, h2, h3, h4, h5, h6 {
     max-height: none !important;
     position: static !important;
     transform: none !important;
+    background-color: transparent !important;
   }
   
   /* Asegurar que el contenedor del ticket se muestre correctamente */

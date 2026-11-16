@@ -31,7 +31,19 @@ class CajaController extends Controller
             ->orderBy('fecha_apertura', 'desc')
             ->first();
 
-        return response()->json($caja ?: ['estado' => 'cerrado']);
+        if (!$caja) {
+            return response()->json(['estado' => 'cerrado']);
+        }
+
+        $ticketsEmitidos = \App\Models\Venta::where('negocio_id', $user->negocio_id)
+            ->where('fecha', '>=', $caja->fecha_apertura)
+            ->count();
+
+        $cajaArray = $caja->toArray();
+        $cajaArray['tickets_emitidos'] = $ticketsEmitidos;
+        $cajaArray['siguiente_ticket'] = $ticketsEmitidos + 1;
+
+        return response()->json($cajaArray);
     }
 
     /**
