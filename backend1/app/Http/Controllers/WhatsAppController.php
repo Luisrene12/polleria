@@ -282,7 +282,7 @@ class WhatsAppController extends Controller
                 'phone'     => $cleanPhone,
                 'pdfBase64' => $request->input('pdf_base64'),
                 'filename'  => $request->input('filename', 'Reporte_Ventas_ElPollon.pdf'),
-                'caption'   => $request->input('caption', '🍗 Reporte Oficial de Ventas — Pollería El Pollón')
+                'caption'   => $request->input('caption', '')
             ]);
 
             if ($resp->successful()) {

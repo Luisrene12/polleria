@@ -165,12 +165,17 @@ app.post('/send-pdf', async (req, res) => {
 
     console.log(`📤 [WHATSAPP-BOT] Enviando PDF de reporte directo a ${jid}...`);
 
-    const result = await sock.sendMessage(jid, {
+    const messagePayload = {
       document: buffer,
       mimetype: 'application/pdf',
-      fileName: docName,
-      caption: caption || '🍗 Reporte Oficial de Ventas — Pollería El Pollón'
-    });
+      fileName: docName
+    };
+
+    if (caption && typeof caption === 'string' && caption.trim().length > 0) {
+      messagePayload.caption = caption.trim();
+    }
+
+    const result = await sock.sendMessage(jid, messagePayload);
 
     console.log(`✅ [WHATSAPP-BOT] Reporte PDF enviado exitosamente a ${jid}`);
 

@@ -346,12 +346,12 @@ export default function VentasGenerales() {
             caption += `👤 *Por:* ${user?.nombre || 'Administración'}\n`;
             caption += `_Sistema POS El Pollón_`;
 
-            // Intentar envío DIRECTO a través del bot conectado en el sistema
+            // Intentar envío DIRECTO a través del bot conectado en el sistema (Solo el archivo PDF con su nombre, sin detalle en texto)
             try {
                 const res = await sendPDFReportBot({
                     pdf_base64: pdfBase64,
                     filename: filename,
-                    caption: caption
+                    caption: '' // Sin detalle en texto: la información va exclusivamente dentro del archivo PDF
                 });
 
                 toast.dismiss(toastId);
