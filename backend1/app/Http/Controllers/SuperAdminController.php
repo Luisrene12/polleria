@@ -744,10 +744,16 @@ class SuperAdminController extends Controller
             Suscripcion::where('negocio_id', $id)
                 ->where('estado', 'activa')
                 ->update(['estado' => 'suspendida', 'observaciones' => $motivo]);
+
+            // Desactivar usuarios del negocio para impedir login
+            Usuario::where('negocio_id', $id)->update(['activo' => 0]);
         } elseif ($nuevoEstado === 'activo') {
             Suscripcion::where('negocio_id', $id)
                 ->where('estado', 'suspendida')
                 ->update(['estado' => 'activa', 'observaciones' => 'Reactivado tras confirmar regularización']);
+
+            // Reactivar usuarios del negocio para permitir login nuevamente
+            Usuario::where('negocio_id', $id)->update(['activo' => 1]);
         }
 
         AuditoriaService::registrar(
