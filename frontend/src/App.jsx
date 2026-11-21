@@ -18,6 +18,7 @@ const CategoriasAdmin     = lazy(() => import('./pages/CategoriasAdmin'));
 const Dashboard           = lazy(() => import('./pages/Reportes/Dashboard'));
 const WhatsAppConfig      = lazy(() => import('./pages/Configuracion/WhatsAppConfig'));
 const FacturacionRestaurante = lazy(() => import('./pages/Configuracion/FacturacionRestaurante'));
+const ConfiguracionRestaurante = lazy(() => import('./pages/Configuracion/ConfiguracionRestaurante'));
 const SuperAdminDashboard = lazy(() => import('./pages/SuperAdmin/SuperAdminDashboard'));
 
 // Redirección inicial inteligente según el rol del usuario
@@ -81,6 +82,7 @@ function App() {
 
                 {/* Administración — exclusivo administradores y superadministrador */}
                 <Route element={<ProtectedRoute allowedRoles={['super_admin', 'admin']} />}>
+                  <Route path="/configuracion"       element={<ConfiguracionRestaurante />} />
                   <Route path="/usuarios"            element={<UsuariosAdmin />} />
                   <Route path="/facturacion"         element={<FacturacionRestaurante />} />
                   <Route path="/reportes/productos"  element={<VentasPorProducto />} />

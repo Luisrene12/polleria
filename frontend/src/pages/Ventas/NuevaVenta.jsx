@@ -822,10 +822,19 @@ export default function NuevaVenta() {
         <div className="p-1">
           <div className="text-center mb-3">
             <span className="text-2xl">🍗</span>
-            <h1 className="font-bold text-lg uppercase tracking-tight mt-1 mb-0.5">POLLERÍA DELICIAS EL POLLÓN</h1>
-            <p className="text-[10px] m-0 italic font-bold">"El mejor sabor en cada presa"</p>
-            <p className="text-[9px] m-0 text-gray-600">Cochabamba - Bolivia</p>
-            <p className="text-[9px] m-0 text-gray-600">Telf: 44412345 - Cel: 77712345</p>
+            <h1 className="font-bold text-lg uppercase tracking-tight mt-1 mb-0.5">
+              {user?.negocio?.nombre || user?.negocio?.nombre_comercial || 'POLLERÍA DELICIAS EL POLLÓN'}
+            </h1>
+            <p className="text-[10px] m-0 italic font-bold">
+              "{user?.negocio?.slogan || 'El mejor sabor en cada presa'}"
+            </p>
+            <p className="text-[9px] m-0 text-gray-600">
+              {user?.negocio?.ciudad || 'Cochabamba'} - Bolivia
+            </p>
+            <p className="text-[9px] m-0 text-gray-600">
+              {user?.negocio?.direccion ? `${user.negocio.direccion} - ` : ''}
+              {user?.negocio?.telefono ? `Telf: ${user.negocio.telefono}` : 'Telf: 44412345'}
+            </p>
             <div className="border-b border-black border-dashed my-2"></div>
           </div>
 
@@ -872,7 +881,9 @@ export default function NuevaVenta() {
           </div>
 
           <div className="mt-6 text-center border-t border-dashed border-black pt-3">
-            <p className="text-[10px] font-black">¡GRACIAS POR SU PREFERENCIA!</p>
+            <p className="text-[10px] font-black">
+              {user?.negocio?.pie_ticket || '¡GRACIAS POR SU PREFERENCIA!'}
+            </p>
             <p className="text-[8px] mt-1 text-gray-500">Conserve su ticket para cualquier reclamo</p>
           </div>
         </div>

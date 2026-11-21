@@ -72,8 +72,8 @@ export default function Navbar() {
                </div>
                
                <div className="flex flex-col">
-                  <h1 className="text-xl font-[900] tracking-tight text-white leading-none">
-                    El Pollón
+                  <h1 className="text-xl font-[900] tracking-tight text-white leading-none truncate max-w-[200px] sm:max-w-[320px]">
+                    {user?.negocio?.nombre || user?.negocio?.nombre_comercial || 'El Pollón'}
                   </h1>
                   <div className="flex items-center gap-1.5 mt-1">
                     <span className="text-[10px] text-white font-black tracking-widest uppercase">POS</span>
@@ -202,6 +202,21 @@ export default function Navbar() {
                 <span>USUARIOS</span>
               </Link>
             )}
+
+            {/* CONFIGURACIÓN DEL RESTAURANTE */}
+            {(user?.rol === 'admin' || user?.rol === 'super_admin') && (
+              <Link 
+                to="/configuracion" 
+                className={`px-4 py-2 rounded-xl flex items-center gap-2 font-extrabold text-xs uppercase tracking-wider transition-all duration-200 ${
+                  isActive('/configuracion') 
+                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/30 rounded-full' 
+                    : 'text-zinc-300 hover:text-white hover:bg-[#1a1f29]'
+                }`}
+              >
+                <span className="text-base leading-none">⚙️</span>
+                <span>AJUSTES</span>
+              </Link>
+            )}
           </div>
 
           {/* RIGHT: Clock & User Dropdown */}
@@ -305,6 +320,12 @@ export default function Navbar() {
                 <Link onClick={() => setIsMenuOpen(false)} to="/usuarios" className={`flex items-center space-x-3 p-3.5 rounded-2xl font-black text-xs uppercase tracking-wider ${isActive('/usuarios') ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white' : 'text-zinc-300 hover:bg-[#1a1f29]'}`}>
                    <span>👥</span>
                    <span>USUARIOS</span>
+                </Link>
+              )}
+              {(user?.rol === 'admin' || user?.rol === 'super_admin') && (
+                <Link onClick={() => setIsMenuOpen(false)} to="/configuracion" className={`flex items-center space-x-3 p-3.5 rounded-2xl font-black text-xs uppercase tracking-wider ${isActive('/configuracion') ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white' : 'text-zinc-300 hover:bg-[#1a1f29]'}`}>
+                   <span>⚙️</span>
+                   <span>CONFIGURACIÓN</span>
                 </Link>
               )}
            </div>

@@ -24,6 +24,9 @@ class Negocio extends Model
         'estado',
         'slug',
         'logo_url',
+        'color_tema',
+        'slogan',
+        'pie_ticket',
     ];
 
     public function usuarios()

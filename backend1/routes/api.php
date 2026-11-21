@@ -11,6 +11,7 @@ use App\Http\Controllers\ReporteController;
 use App\Http\Controllers\WhatsAppController;
 use App\Http\Controllers\SuperAdminController;
 use App\Http\Controllers\BillingConfigController;
+use App\Http\Controllers\ConfiguracionNegocioController;
 
 use App\Http\Controllers\ImageProxyController;
 
@@ -203,5 +204,11 @@ Route::middleware(['auth:sanctum', 'negocio_activo'])->group(function () {
         Route::get('/config',          [BillingConfigController::class, 'getMiConfiguracion']);
         Route::get('/comprobantes',    [BillingConfigController::class, 'getComprobantes']);
         Route::post('/nota-venta',     [BillingConfigController::class, 'registrarNotaVenta']);
+    });
+
+    // 9. Configuración del Restaurante (Marca, Colores, Tickets, Datos)
+    Route::prefix('configuracion-restaurante')->middleware('admin')->group(function () {
+        Route::get('/',  [ConfiguracionNegocioController::class, 'get']);
+        Route::post('/', [ConfiguracionNegocioController::class, 'update']);
     });
 });
