@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { toast } from 'react-hot-toast';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
@@ -28,11 +29,19 @@ api.interceptors.response.use(
     // No redirigir si el error proviene del intento de login
     const isLoginRequest = config.url && config.url.includes('/auth/login');
 
-    // Redirigir si sesión expirada
-    if ((error.response?.status === 401 || error.response?.status === 403) && !isLoginRequest) {
+    // 401: Sesión no autenticada o token revocado/expirado
+    if (error.response?.status === 401 && !isLoginRequest) {
       localStorage.removeItem('token');
       if (!window.location.pathname.includes('/login')) {
         window.location.href = '/login';
+      }
+      return Promise.reject(error);
+    }
+
+    // 403: Acción prohibida / Módulo no contratado / Restaurante suspendido
+    if (error.response?.status === 403) {
+      if (error.response?.data?.suspended) {
+        toast.error(error.response.data.message || 'Restaurante suspendido.');
       }
       return Promise.reject(error);
     }

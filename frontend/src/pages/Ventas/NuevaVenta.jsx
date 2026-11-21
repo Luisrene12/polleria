@@ -5,6 +5,7 @@ import { getCategorias } from '../../services/categoriaService';
 import { registrarVenta } from '../../services/ventaService';
 import { toast } from 'react-hot-toast';
 import { getCajaEstado, abrirCaja, cerrarCaja } from '../../services/cajaService';
+import { useAuth } from '../../context/AuthContext';
 
 // Componente de imagen de producto con fallback al emoji
 function ProductoImagen({ imagen, nombre, icon }) {
@@ -29,6 +30,8 @@ function ProductoImagen({ imagen, nombre, icon }) {
 }
 
 export default function NuevaVenta() {
+  const { user } = useAuth();
+  const esSuperAdmin = user?.rol === 'super_admin';
   const [productos, setProductos] = useState([]);
   const [categorias, setCategorias] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -131,6 +134,12 @@ export default function NuevaVenta() {
         const sigTicket = cajaData.siguiente_ticket || 1;
         setNumeroTicketActual(sigTicket);
         ticketNumeroRef.current = sigTicket;
+      } else if (cajaData && cajaData.super_admin) {
+        // Super Admin: no necesita caja, puede operar libremente
+        setCaja(null);
+        setShowAbrirCajaModal(false);
+        setNumeroTicketActual(1);
+        ticketNumeroRef.current = 1;
       } else {
         setCaja(null);
         setShowAbrirCajaModal(true);

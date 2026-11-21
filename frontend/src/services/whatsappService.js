@@ -198,6 +198,14 @@ export const sendWhatsAppReport = async (stats, user) => {
  * Notificación de inicio de sesión
  */
 export const sendLoginNotification = async (user) => {
+  if (!user || user.rol === 'super_admin') return;
+
+  // Solo enviar si el restaurante tiene contratado y habilitado el módulo de WhatsApp
+  const modulos = user.negocio?.modulos;
+  if (Array.isArray(modulos) && !modulos.includes('whatsapp_bot')) {
+    return;
+  }
+
   const time = new Date().toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' });
   const date = new Date().toLocaleDateString('es-BO');
   
@@ -210,7 +218,7 @@ export const sendLoginNotification = async (user) => {
   try {
     await api.post('/whatsapp/send', { message });
   } catch (error) {
-    console.error('Error enviando notificación login:', error);
+    console.warn('Notificación WhatsApp de login omitida:', error?.message);
   }
 };
 
@@ -218,6 +226,14 @@ export const sendLoginNotification = async (user) => {
  * Notificación de cierre de caja / sesión
  */
 export const sendLogoutNotification = async (user) => {
+  if (!user || user.rol === 'super_admin') return;
+
+  // Solo enviar si el restaurante tiene contratado y habilitado el módulo de WhatsApp
+  const modulos = user.negocio?.modulos;
+  if (Array.isArray(modulos) && !modulos.includes('whatsapp_bot')) {
+    return;
+  }
+
   const time = new Date().toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' });
   const date = new Date().toLocaleDateString('es-BO');
   
@@ -230,7 +246,7 @@ export const sendLogoutNotification = async (user) => {
   try {
     await api.post('/whatsapp/send', { message });
   } catch (error) {
-    console.error('Error enviando notificación logout:', error);
+    console.warn('Notificación WhatsApp de logout omitida:', error?.message);
   }
 };
 
