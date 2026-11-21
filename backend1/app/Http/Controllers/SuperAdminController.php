@@ -2235,6 +2235,8 @@ class SuperAdminController extends Controller
             $dbKey = 'Tables_in_' . $dbName;
             foreach ($tables as $t) {
                 $tableName = $t->$dbKey ?? reset($t);
+                // Sanitizar nombre de tabla para evitar SQL injection
+                $tableName = preg_replace('/[^a-zA-Z0-9_]/', '', $tableName);
                 $createTable = DB::select("SHOW CREATE TABLE `{$tableName}`");
                 $createSql = $createTable[0]->{'Create Table'} ?? '';
                 fwrite($handle, "DROP TABLE IF EXISTS `{$tableName}`;\n" . $createSql . ";\n\n");

@@ -14,6 +14,21 @@ class ImageProxyController extends Controller
             return $this->imagenPlaceholder();
         }
 
+        // ── Protección SSRF: solo permitir URLs HTTP/HTTPS externas ──
+        $parsedUrl = parse_url($url);
+        $scheme = strtolower($parsedUrl['scheme'] ?? '');
+        if (!in_array($scheme, ['http', 'https'])) {
+            return $this->imagenPlaceholder();
+        }
+
+        $host = strtolower($parsedUrl['host'] ?? '');
+        // Bloquear IPs internas, localhost, metadata clouds
+        $blockedHosts = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '169.254.169.254', 'metadata.google.internal'];
+        if (in_array($host, $blockedHosts) || preg_match('/^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/', $host)) {
+            \Log::warning("🛡️ SSRF bloqueado en proxy de imagen: {$url}", ['ip' => $request->ip()]);
+            return $this->imagenPlaceholder();
+        }
+
         // Caché en disco
         $cacheDir  = storage_path('app/public/img_cache');
         $cachePath = $cacheDir . '/' . md5($url);
