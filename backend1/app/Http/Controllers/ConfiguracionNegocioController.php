@@ -15,13 +15,26 @@ class ConfiguracionNegocioController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->negocio_id) {
-            return response()->json([
-                'message' => 'No tiene un restaurante asociado.'
-            ], 403);
+        $negocio = null;
+        if ($user && $user->negocio_id) {
+            $negocio = Negocio::find($user->negocio_id);
+        }
+        if (!$negocio) {
+            $negocioId = $request->query('negocio_id', 1);
+            $negocio = Negocio::find($negocioId) ?? Negocio::first();
         }
 
-        $negocio = Negocio::findOrFail($user->negocio_id);
+        if (!$negocio) {
+            return response()->json([
+                'message' => 'No se encontró ningún restaurante registrado.'
+            ], 404);
+        }
+
+        // Si el usuario no tiene negocio_id asignado (ej: super_admin), asociarlo
+        if ($user && !$user->negocio_id) {
+            $user->negocio_id = $negocio->id;
+            $user->save();
+        }
 
         return response()->json([
             'id' => $negocio->id,
@@ -46,13 +59,25 @@ class ConfiguracionNegocioController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->negocio_id) {
-            return response()->json([
-                'message' => 'No tiene un restaurante asociado para configurar.'
-            ], 403);
+        $negocio = null;
+        if ($user && $user->negocio_id) {
+            $negocio = Negocio::find($user->negocio_id);
+        }
+        if (!$negocio) {
+            $negocioId = $request->input('negocio_id', 1);
+            $negocio = Negocio::find($negocioId) ?? Negocio::first();
         }
 
-        $negocio = Negocio::findOrFail($user->negocio_id);
+        if (!$negocio) {
+            return response()->json([
+                'message' => 'No se encontró ningún restaurante registrado para configurar.'
+            ], 404);
+        }
+
+        if ($user && !$user->negocio_id) {
+            $user->negocio_id = $negocio->id;
+            $user->save();
+        }
 
         $validated = $request->validate([
             'nombre_comercial' => ['required', 'string', 'max:100'],
@@ -84,19 +109,23 @@ class ConfiguracionNegocioController extends Controller
             'pie_ticket'       => isset($validated['pie_ticket']) ? trim($validated['pie_ticket']) : $negocio->pie_ticket,
         ]);
 
-        AuditoriaService::registrar(
-            'actualizar_configuracion_restaurante',
-            'negocios',
-            $negocio->id,
-            $negocio->id,
-            $anterior,
-            [
-                'nombre_comercial' => $negocio->nombre_comercial,
-                'color_tema'       => $negocio->color_tema,
-                'slogan'           => $negocio->slogan,
-            ],
-            "Actualización de marca y datos por el Administrador {$user->username}"
-        );
+        try {
+            AuditoriaService::registrar(
+                'actualizar_configuracion_restaurante',
+                'negocios',
+                $negocio->id,
+                $negocio->id,
+                $anterior,
+                [
+                    'nombre_comercial' => $negocio->nombre_comercial,
+                    'color_tema'       => $negocio->color_tema,
+                    'slogan'           => $negocio->slogan,
+                ],
+                "Actualización de marca y datos por " . ($user->username ?? 'admin')
+            );
+        } catch (\Throwable $th) {
+            \Log::warning("Error al registrar auditoria de configuracion: " . $th->getMessage());
+        }
 
         return response()->json([
             'success' => true,

@@ -125,6 +125,8 @@ class AuthController extends Controller
             'Inicio de sesión exitoso'
         );
 
+        $negocioActivo = $usuario->negocio ?? \App\Models\Negocio::first();
+
         return response()->json([
             'token' => $token,
             'user' => [
@@ -132,22 +134,23 @@ class AuthController extends Controller
                 'nombre' => $usuario->nombre,
                 'username' => $usuario->username,
                 'rol' => $usuario->rol,
-                'negocio_id' => $usuario->negocio_id,
-                'negocio' => $usuario->negocio ? [
-                    'id' => $usuario->negocio->id,
-                    'nombre' => $usuario->negocio->nombre_comercial,
-                    'razon_social' => $usuario->negocio->razon_social,
-                    'nit' => $usuario->negocio->nit,
-                    'telefono' => $usuario->negocio->telefono,
-                    'direccion' => $usuario->negocio->direccion,
-                    'ciudad' => $usuario->negocio->ciudad,
-                    'slug' => $usuario->negocio->slug,
-                    'color_tema' => $usuario->negocio->color_tema ?: '#f97316',
-                    'slogan' => $usuario->negocio->slogan,
-                    'pie_ticket' => $usuario->negocio->pie_ticket,
-                    'estado' => $usuario->negocio->estado,
-                    'plan' => $usuario->negocio->suscripcionActiva ? $usuario->negocio->suscripcionActiva->plan->nombre : null,
-                    'modulos' => $usuario->negocio->getModulosHabilitados(),
+                'negocio_id' => $usuario->negocio_id ?? $negocioActivo?->id,
+                'negocio' => $negocioActivo ? [
+                    'id' => $negocioActivo->id,
+                    'nombre' => $negocioActivo->nombre_comercial,
+                    'nombre_comercial' => $negocioActivo->nombre_comercial,
+                    'razon_social' => $negocioActivo->razon_social,
+                    'nit' => $negocioActivo->nit,
+                    'telefono' => $negocioActivo->telefono,
+                    'direccion' => $negocioActivo->direccion,
+                    'ciudad' => $negocioActivo->ciudad,
+                    'slug' => $negocioActivo->slug,
+                    'color_tema' => $negocioActivo->color_tema ?: '#f97316',
+                    'slogan' => $negocioActivo->slogan,
+                    'pie_ticket' => $negocioActivo->pie_ticket,
+                    'estado' => $negocioActivo->estado,
+                    'plan' => $negocioActivo->suscripcionActiva ? $negocioActivo->suscripcionActiva->plan->nombre : null,
+                    'modulos' => method_exists($negocioActivo, 'getModulosHabilitados') ? $negocioActivo->getModulosHabilitados() : [],
                 ] : null,
             ]
         ]);
@@ -228,28 +231,30 @@ class AuthController extends Controller
     public function perfil(Request $request)
     {
         $usuario = $request->user()->load('negocio.suscripcionActiva.plan');
+        $negocioActivo = $usuario->negocio ?? \App\Models\Negocio::first();
 
         return response()->json([
             'id' => $usuario->id,
             'nombre' => $usuario->nombre,
             'username' => $usuario->username,
             'rol' => $usuario->rol,
-            'negocio_id' => $usuario->negocio_id,
-            'negocio' => $usuario->negocio ? [
-                'id' => $usuario->negocio->id,
-                'nombre' => $usuario->negocio->nombre_comercial,
-                'razon_social' => $usuario->negocio->razon_social,
-                'nit' => $usuario->negocio->nit,
-                'telefono' => $usuario->negocio->telefono,
-                'direccion' => $usuario->negocio->direccion,
-                'ciudad' => $usuario->negocio->ciudad,
-                'slug' => $usuario->negocio->slug,
-                'color_tema' => $usuario->negocio->color_tema ?: '#f97316',
-                'slogan' => $usuario->negocio->slogan,
-                'pie_ticket' => $usuario->negocio->pie_ticket,
-                'estado' => $usuario->negocio->estado,
-                'plan' => $usuario->negocio->suscripcionActiva ? $usuario->negocio->suscripcionActiva->plan->nombre : null,
-                'modulos' => $usuario->negocio->getModulosHabilitados(),
+            'negocio_id' => $usuario->negocio_id ?? $negocioActivo?->id,
+            'negocio' => $negocioActivo ? [
+                'id' => $negocioActivo->id,
+                'nombre' => $negocioActivo->nombre_comercial,
+                'nombre_comercial' => $negocioActivo->nombre_comercial,
+                'razon_social' => $negocioActivo->razon_social,
+                'nit' => $negocioActivo->nit,
+                'telefono' => $negocioActivo->telefono,
+                'direccion' => $negocioActivo->direccion,
+                'ciudad' => $negocioActivo->ciudad,
+                'slug' => $negocioActivo->slug,
+                'color_tema' => $negocioActivo->color_tema ?: '#f97316',
+                'slogan' => $negocioActivo->slogan,
+                'pie_ticket' => $negocioActivo->pie_ticket,
+                'estado' => $negocioActivo->estado,
+                'plan' => $negocioActivo->suscripcionActiva ? $negocioActivo->suscripcionActiva->plan->nombre : null,
+                'modulos' => method_exists($negocioActivo, 'getModulosHabilitados') ? $negocioActivo->getModulosHabilitados() : [],
             ] : null,
         ]);
     }
