@@ -185,20 +185,6 @@ export default function Navbar() {
                   </Link>
                 )}
 
-                {/* FACTURACIÓN (condicionado por módulo) */}
-                {(user?.rol === 'admin' || user?.rol === 'super_admin') && hasModulo('facturacion_electronica') && (
-                  <Link 
-                    to="/facturacion" 
-                    className={`px-4 py-2 rounded-xl flex items-center gap-2 font-extrabold text-xs uppercase tracking-wider transition-all duration-200 ${
-                      isActive('/facturacion') 
-                        ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/30 rounded-full' 
-                        : 'text-zinc-300 hover:text-white hover:bg-[#1a1f29]'
-                    }`}
-                  >
-                    <span className="text-base leading-none text-cyan-400">🏛️</span>
-                    <span>FACTURACIÓN</span>
-                  </Link>
-                )}
               </>
             )}
 
@@ -214,17 +200,6 @@ export default function Navbar() {
               >
                 <span className="text-base leading-none">👥</span>
                 <span>USUARIOS</span>
-              </Link>
-            )}
-
-            {/* ACCESO A PANEL SUPERADMIN SI ES SUPER_ADMIN */}
-            {user?.rol === 'super_admin' && (
-              <Link 
-                to="/super-admin" 
-                className="px-4 py-2 rounded-xl flex items-center gap-1.5 font-black text-xs uppercase tracking-wider bg-gradient-to-r from-purple-700 via-purple-600 to-indigo-600 hover:brightness-110 text-white shadow-lg shadow-purple-600/30 transition-all duration-200 cursor-pointer ml-1"
-              >
-                <span>👑</span>
-                <span>PANEL SAAS</span>
               </Link>
             )}
           </div>
@@ -326,22 +301,10 @@ export default function Navbar() {
                    <span>WHATSAPP</span>
                 </Link>
               )}
-              {(user?.rol === 'admin' || user?.rol === 'super_admin') && hasModulo('facturacion_electronica') && (
-                <Link onClick={() => setIsMenuOpen(false)} to="/facturacion" className={`flex items-center space-x-3 p-3.5 rounded-2xl font-black text-xs uppercase tracking-wider ${isActive('/facturacion') ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white' : 'text-zinc-300 hover:bg-[#1a1f29]'}`}>
-                   <span className="text-cyan-400">🏛️</span>
-                   <span>FACTURACIÓN</span>
-                </Link>
-              )}
               {(user?.rol === 'admin' || user?.rol === 'super_admin') && hasModulo('usuarios_roles') && (
                 <Link onClick={() => setIsMenuOpen(false)} to="/usuarios" className={`flex items-center space-x-3 p-3.5 rounded-2xl font-black text-xs uppercase tracking-wider ${isActive('/usuarios') ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white' : 'text-zinc-300 hover:bg-[#1a1f29]'}`}>
                    <span>👥</span>
                    <span>USUARIOS</span>
-                </Link>
-              )}
-              {user?.rol === 'super_admin' && (
-                <Link onClick={() => setIsMenuOpen(false)} to="/super-admin" className="flex items-center space-x-3 p-3.5 rounded-2xl font-black text-xs uppercase tracking-wider bg-gradient-to-r from-purple-700 to-indigo-600 text-white">
-                   <span>👑</span>
-                   <span>PANEL SUPERADMIN</span>
                 </Link>
               )}
            </div>
