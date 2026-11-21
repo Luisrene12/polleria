@@ -170,8 +170,8 @@ export default function Navbar() {
                   <span>PRODUCTOS</span>
                 </Link>
 
-                {/* WHATSAPP (condicionado por módulo contratado) */}
-                {hasModulo('whatsapp_bot') && (
+                {/* WHATSAPP (Siempre visible para administradores o con módulo activo) */}
+                {(user?.rol === 'admin' || user?.rol === 'super_admin' || hasModulo('whatsapp_bot')) && (
                   <Link 
                     to="/whatsapp" 
                     className={`px-4 py-2 rounded-xl flex items-center gap-2 font-extrabold text-xs uppercase tracking-wider transition-all duration-200 ${
@@ -320,7 +320,7 @@ export default function Navbar() {
                  <span>📦</span>
                  <span>PRODUCTOS</span>
               </Link>
-              {hasModulo('whatsapp_bot') && (
+              {(user?.rol === 'admin' || user?.rol === 'super_admin' || hasModulo('whatsapp_bot')) && (
                 <Link onClick={() => setIsMenuOpen(false)} to="/whatsapp" className={`flex items-center space-x-3 p-3.5 rounded-2xl font-black text-xs uppercase tracking-wider ${isActive('/whatsapp') ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white' : 'text-zinc-300 hover:bg-[#1a1f29]'}`}>
                    <span className="text-emerald-400">💬</span>
                    <span>WHATSAPP</span>
